@@ -1,0 +1,6 @@
+name = "bibleapp-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-10"
+
+# If you use node packages like "openai", keep this:
+compatibility_flags = ["nodejs_compat"]
