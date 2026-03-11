@@ -53,6 +53,8 @@ function openaiClient(env: Env): OpenAI | null {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const path = url.pathname.replace(/\/{2,}/g, '/');
+
     const origin = request.headers.get('Origin');
     const allowedOrigins = parseAllowedOrigins(env);
     const cors = corsHeaders(origin, allowedOrigins);
@@ -61,7 +63,6 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    // Require Supabase user JWT
     const token = getBearerToken(request);
     if (!token) {
       return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
@@ -69,28 +70,23 @@ export default {
 
     const supabase = supabaseForUser(env, token);
 
-    // Basic routing
-    if (request.method === 'POST' && url.pathname === '/onboarding') {
-      // TODO: implement to match your former Next route logic
+    if (request.method === 'POST' && path === '/onboarding') {
       return json({ ok: true, note: 'onboarding not yet implemented' }, { headers: cors });
     }
 
-    if (request.method === 'GET' && url.pathname === '/guidance') {
-      // TODO: implement fetch today guidance
+    if (request.method === 'GET' && path === '/guidance') {
       return json({ guidance: null, note: 'guidance GET not yet implemented' }, { headers: cors });
     }
 
-    if (request.method === 'POST' && url.pathname === '/guidance') {
-      // TODO: implement generate/regenerate, using OpenAI optionally
+    if (request.method === 'POST' && path === '/guidance') {
       const _openai = openaiClient(env);
       return json({ guidance: null, note: 'guidance POST not yet implemented' }, { headers: cors });
     }
 
-    if (request.method === 'POST' && url.pathname === '/feedback') {
-      // TODO: implement feedback write
+    if (request.method === 'POST' && path === '/feedback') {
       return json({ ok: true, note: 'feedback not yet implemented' }, { headers: cors });
     }
 
-    return json({ error: 'Not found' }, { status: 404, headers: cors });
+    return json({ error: 'Not found', path }, { status: 404, headers: cors });
   },
 };
