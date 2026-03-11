@@ -70,9 +70,76 @@ export default {
 
     const supabase = supabaseForUser(env, token);
 
-    if (request.method === 'POST' && path === '/onboarding') {
-      return json({ ok: true, note: 'onboarding not yet implemented' }, { headers: cors });
+  if (request.method === 'POST' && path === '/onboarding') {
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: 'Invalid JSON body' }, { status: 400, headers: cors });
     }
+  
+    // Identify the user from the JWT (important: don’t trust client-provided user_id)
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    const user = userData?.user;
+    if (userErr || !user) {
+      return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+    }
+  
+    const answers = {
+      user_id: user.id,
+      struggles: body.struggles ?? [],
+      seeking: body.seeking ?? [],
+      familiarity: body.familiarity ?? null,
+      content_types: body.content_types ?? [],
+      tone: body.tone ?? null,
+      devotional_length: body.devotional_length ?? null,
+      free_text: body.free_text ?? null,
+      updated_at: new Date().toISOString(),
+    };
+  
+    // 1) Save onboarding answers
+    const { error: answersErr } = await supabase
+      .from('onboarding_answers')
+      .upsert(answers, { onConflict: 'user_id' });
+  
+    if (answersErr) {
+      return json({ error: answersErr.message }, { status: 400, headers: cors });
+    }
+  
+    // 2) Create/update spiritual profile (simple deterministic mapping)
+    const profileSummary =
+      `Seeking: ${(answers.seeking as string[]).join(', ') || 'N/A'}. ` +
+      `Struggles: ${(answers.struggles as string[]).join(', ') || 'N/A'}.`;
+  
+    const spiritualProfile = {
+      user_id: user.id,
+      bible_experience_level: answers.familiarity,
+      main_struggles: answers.struggles,
+      current_needs: answers.seeking,
+      preferred_content_types: answers.content_types,
+      tone_preference: answers.tone,
+      devotional_length: answers.devotional_length,
+      profile_summary: profileSummary,
+      caution_flags: [],
+      updated_at: new Date().toISOString(),
+    };
+  
+    const { error: spErr } = await supabase
+      .from('spiritual_profiles')
+      .upsert(spiritualProfile, { onConflict: 'user_id' });
+  
+    if (spErr) {
+      return json({ error: spErr.message }, { status: 400, headers: cors });
+    }
+  
+    // 3) Optional: mark onboarding completed
+    await supabase
+      .from('profiles')
+      .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+  
+    return json({ ok: true }, { headers: cors });
+  }
 
     if (request.method === 'GET' && path === '/guidance') {
       return json({ guidance: null, note: 'guidance GET not yet implemented' }, { headers: cors });
