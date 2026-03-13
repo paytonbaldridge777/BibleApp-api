@@ -1,6 +1,226 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
+type SpiritualProfile = {
+  user_id: string;
+  bible_experience_level?: string | null;
+  main_struggles?: string[] | null;
+  current_needs?: string[] | null;
+  preferred_content_types?: string[] | null;
+  tone_preference?: string | null;
+  devotional_length?: string | null;
+  profile_summary?: string | null;
+  caution_flags?: string[] | null;
+};
+
+type ThemeRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+};
+
+type PassageRow = {
+  id: string;
+  reference: string;
+  text: string;
+  devotional_summary?: string | null;
+  caution_notes?: string | null;
+  translation?: string | null;
+  testament?: string | null;
+};
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/\//g, ' ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function uniq<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}
+
+function mapProfileValueToThemeSlug(value: string): string | null {
+  const slug = normalizeSlug(value);
+
+  const aliasMap: Record<string, string> = {
+    peace: 'peace',
+    calm: 'peace',
+    stress: 'peace',
+
+    anxiety: 'anxiety',
+    worry: 'anxiety',
+    overwhelmed: 'anxiety',
+
+    hope: 'hope',
+    discouragement: 'hope',
+    encouragement: 'hope',
+
+    fear: 'fear',
+    afraid: 'fear',
+    courage: 'fear',
+
+    grief: 'grief',
+    loss: 'grief',
+    sorrow: 'grief',
+
+    loneliness: 'loneliness',
+    alone: 'loneliness',
+
+    forgiveness: 'forgiveness',
+    guilt: 'forgiveness',
+    shame: 'forgiveness',
+
+    wisdom: 'wisdom',
+    discernment: 'wisdom',
+    decisions: 'wisdom',
+    decision_making: 'wisdom',
+
+    purpose: 'purpose',
+    calling: 'purpose',
+    meaning: 'purpose',
+
+    temptation: 'temptation',
+    temptation_struggle: 'temptation',
+
+    spiritual_growth: 'spiritual_growth',
+    growth: 'spiritual_growth',
+    maturity: 'spiritual_growth',
+
+    addiction: 'addiction_strongholds',
+    strongholds: 'addiction_strongholds',
+    addiction_strongholds: 'addiction_strongholds',
+
+    prayer: 'prayer',
+
+    trust: 'trust',
+    uncertainty: 'trust',
+
+    endurance: 'endurance',
+    perseverance: 'endurance',
+    waiting: 'endurance',
+  };
+
+  return aliasMap[slug] ?? slug ?? null;
+}
+
+function inferThemeSlugs(profile: SpiritualProfile): string[] {
+  const rawValues = [
+    ...(profile.main_struggles ?? []),
+    ...(profile.current_needs ?? []),
+  ];
+
+  const mapped = rawValues
+    .map(mapProfileValueToThemeSlug)
+    .filter((v): v is string => Boolean(v));
+
+  const defaults = ['peace', 'hope', 'trust', 'prayer'];
+
+  return uniq([...mapped, ...defaults]);
+}
+
+function buildFallbackGuidance(args: {
+  theme: ThemeRow;
+  passage: PassageRow;
+  profile: SpiritualProfile;
+}) {
+  const { theme, passage, profile } = args;
+
+  const tone = profile.tone_preference || 'gentle';
+  const summary =
+    passage.devotional_summary ||
+    `This passage speaks into seasons where ${theme.name.toLowerCase()} is especially needed.`;
+
+  const title = `${theme.name}: ${passage.reference}`;
+
+  const devotionalText =
+    `${summary}\n\n` +
+    `Today’s focus is ${theme.name.toLowerCase()}. ` +
+    `As you reflect on ${passage.reference}, notice what this verse reveals about God’s character and care. ` +
+    `Rather than trying to carry everything alone, let this truth slow you down and re-center your heart in God’s presence.\n\n` +
+    `Scripture: "${passage.text}"`;
+
+  const prayerText =
+    tone === 'direct'
+      ? `God, thank You for Your Word. Help me live the truth of ${passage.reference} today. Strengthen me where I am weak, guide my thoughts, and teach me to trust You more. Amen.`
+      : `Lord, thank You for meeting me in this moment. Through ${passage.reference}, remind me that I am not alone. Calm my heart, guide my thoughts, and help me walk closely with You today. Amen.`;
+
+  const reflectionQuestion =
+    `What would it look like to live out ${passage.reference} in one specific way today?`;
+
+  return {
+    title,
+    devotional_text: devotionalText,
+    prayer_text: prayerText,
+    reflection_question: reflectionQuestion,
+  };
+}
+
+async function generateWithOpenAI(args: {
+  env: Env;
+  theme: ThemeRow;
+  passage: PassageRow;
+  profile: SpiritualProfile;
+}) {
+  if (!args.env.OPENAI_API_KEY) return null;
+
+  const openai = new OpenAI({ apiKey: args.env.OPENAI_API_KEY });
+
+  const prompt = `
+You are writing a short Christian devotional for a Bible guidance app.
+
+Return valid JSON only with this exact shape:
+{
+  "title": string,
+  "devotional_text": string,
+  "prayer_text": string,
+  "reflection_question": string
+}
+
+Rules:
+- Be biblically grounded and pastoral.
+- Be encouraging, calm, and clear.
+- Do not be preachy, manipulative, or overly dramatic.
+- Keep devotional_text to about 120-180 words.
+- Keep prayer_text to 40-80 words.
+- Keep reflection_question to one sentence.
+- Use the scripture passage naturally.
+- Do not mention denominations.
+- Do not include markdown.
+
+User profile:
+${JSON.stringify(args.profile, null, 2)}
+
+Theme:
+${JSON.stringify(args.theme, null, 2)}
+
+Passage:
+${JSON.stringify(args.passage, null, 2)}
+`.trim();
+
+  const response = await openai.responses.create({
+    model: 'gpt-4.1-mini',
+    input: prompt,
+  });
+
+  const text = response.output_text?.trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -139,15 +359,201 @@ export default {
       .eq('id', user.id);
   
     return json({ ok: true }, { headers: cors });
-  }
+   }
 
     if (request.method === 'GET' && path === '/guidance') {
       return json({ guidance: null, note: 'guidance GET not yet implemented' }, { headers: cors });
     }
-
+    
     if (request.method === 'POST' && path === '/guidance') {
-      const _openai = openaiClient(env);
-      return json({ guidance: null, note: 'guidance POST not yet implemented' }, { headers: cors });
+      try {
+        const token = getBearerToken(request);
+        if (!token) {
+          return json({ error: 'Missing bearer token' }, { status: 401, headers: cors });
+        }
+    
+        const supabase = supabaseForUser(env, token);
+    
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+    
+        if (userError || !user) {
+          return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+        }
+    
+        let body: { mode?: 'generate' | 'regenerate' } = {};
+        try {
+          body = await request.json();
+        } catch {
+          body = {};
+        }
+    
+        const requestedMode = body.mode || body.action;
+        const mode = requestedMode === 'regenerate' ? 'regenerate' : 'generate';
+        const guidanceDate = todayIsoDate();
+    
+        if (mode === 'generate') {
+          const { data: existing } = await supabase
+            .from('daily_guidance')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('guidance_date', guidanceDate)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+    
+          if (existing) {
+            return json({ guidance: existing }, { headers: cors });
+          }
+        }
+    
+        const { data: profile, error: profileError } = await supabase
+          .from('spiritual_profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+    
+        if (profileError) {
+          return json({ error: 'Failed to load spiritual profile' }, { status: 500, headers: cors });
+        }
+    
+        if (!profile) {
+          return json(
+            { error: 'No spiritual profile found. Please complete onboarding first.' },
+            { status: 400, headers: cors }
+          );
+        }
+    
+        const themeSlugs = inferThemeSlugs(profile as SpiritualProfile);
+    
+        const { data: themes, error: themesError } = await supabase
+          .from('scripture_themes')
+          .select('id, slug, name, description')
+          .in('slug', themeSlugs);
+    
+        if (themesError || !themes || themes.length === 0) {
+          return json({ error: 'No matching scripture themes found' }, { status: 500, headers: cors });
+        }
+    
+        const themesBySlug = new Map((themes as ThemeRow[]).map((t) => [t.slug, t]));
+        const orderedThemes = themeSlugs
+          .map((slug) => themesBySlug.get(slug))
+          .filter((t): t is ThemeRow => Boolean(t));
+    
+        let selectedTheme: ThemeRow | null = null;
+        let selectedPassage: PassageRow | null = null;
+    
+        for (const theme of orderedThemes) {
+          const { data: mappings, error: mappingError } = await supabase
+            .from('scripture_theme_map')
+            .select(`
+              passage_id,
+              scripture_passages (
+                id,
+                reference,
+                text,
+                devotional_summary,
+                caution_notes,
+                translation,
+                testament
+              )
+            `)
+            .eq('theme_id', theme.id)
+            .limit(10);
+    
+          if (mappingError || !mappings || mappings.length === 0) {
+            continue;
+          }
+    
+          const passages = mappings
+            .map((m: any) => m.scripture_passages)
+            .filter(Boolean) as PassageRow[];
+    
+          if (passages.length === 0) continue;
+    
+          const randomIndex = Math.floor(Math.random() * passages.length);
+          selectedTheme = theme;
+          selectedPassage = passages[randomIndex];
+          break;
+        }
+    
+        if (!selectedTheme || !selectedPassage) {
+          return json(
+            { error: 'No scripture passage found for the matched themes yet' },
+            { status: 500, headers: cors }
+          );
+        }
+    
+        let generated = await generateWithOpenAI({
+          env,
+          theme: selectedTheme,
+          passage: selectedPassage,
+          profile: profile as SpiritualProfile,
+        });
+    
+        if (
+          !generated ||
+          !generated.title ||
+          !generated.devotional_text ||
+          !generated.prayer_text ||
+          !generated.reflection_question
+        ) {
+          generated = buildFallbackGuidance({
+            theme: selectedTheme,
+            passage: selectedPassage,
+            profile: profile as SpiritualProfile,
+          });
+        }
+    
+        const insertPayload = {
+          user_id: user.id,
+          theme_id: selectedTheme.id,
+          passage_id: selectedPassage.id,
+          guidance_date: guidanceDate,
+          title: generated.title,
+          devotional_text: generated.devotional_text,
+          prayer_text: generated.prayer_text,
+          reflection_question: generated.reflection_question,
+        };
+    
+        const { data: inserted, error: insertError } = await supabase
+          .from('daily_guidance')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+    
+        if (insertError) {
+          return json(
+            { error: 'Failed to save generated guidance', details: insertError.message },
+            { status: 500, headers: cors }
+          );
+        }
+    
+        return json(
+          {
+            guidance: inserted,
+            matched_theme: {
+              id: selectedTheme.id,
+              slug: selectedTheme.slug,
+              name: selectedTheme.name,
+            },
+            passage: {
+              id: selectedPassage.id,
+              reference: selectedPassage.reference,
+              text: selectedPassage.text,
+              translation: selectedPassage.translation,
+            },
+          },
+          { headers: cors }
+        );
+      } catch (error: any) {
+        return json(
+          { error: 'Unexpected error generating guidance', details: error?.message ?? String(error) },
+          { status: 500, headers: cors }
+        );
+      }
     }
 
     if (request.method === 'POST' && path === '/feedback') {
