@@ -383,7 +383,7 @@ export default {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
     
-        let body: { mode?: 'generate' | 'regenerate' } = {};
+        let body: { mode?: 'generate' | 'regenerate'; action?: 'generate' | 'regenerate' } = {};
         try {
           body = await request.json();
         } catch {
@@ -395,18 +395,53 @@ export default {
         const guidanceDate = todayIsoDate();
     
         if (mode === 'generate') {
-          const { data: existing } = await supabase
-            .from('daily_guidance')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('guidance_date', guidanceDate)
-            .order('created_at', { ascending: false })
-            .limit(1)
+        const { data: existing } = await supabase
+        .from('daily_guidance')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('guidance_date', guidanceDate)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+        
+        if (existing) {
+        let matchedTheme = null;
+        let passage = null;
+        
+        if (existing.theme_id) {
+          const { data: themeData } = await supabase
+            .from('scripture_themes')
+            .select('id, slug, name')
+            .eq('id', existing.theme_id)
             .maybeSingle();
-    
-          if (existing) {
-            return json({ guidance: existing }, { headers: cors });
+        
+          if (themeData) {
+            matchedTheme = themeData;
           }
+        }
+        
+        if (existing.passage_id) {
+          const { data: passageData } = await supabase
+            .from('scripture_passages')
+            .select('id, reference, text, translation')
+            .eq('id', existing.passage_id)
+            .maybeSingle();
+        
+          if (passageData) {
+            passage = passageData;
+          }
+        }
+        
+        return json(
+          {
+            guidance: existing,
+            matched_theme: matchedTheme,
+            passage,
+          },
+          { headers: cors }
+        );
+        
+        }
         }
     
         const { data: profile, error: profileError } = await supabase
