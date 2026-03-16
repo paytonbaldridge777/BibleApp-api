@@ -362,7 +362,99 @@ export default {
    }
 
     if (request.method === 'GET' && path === '/guidance') {
-      return json({ guidance: null, note: 'guidance GET not yet implemented' }, { headers: cors });
+      try {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader) {
+      return json({ error: 'Missing authorization header' }, 401);
+      }
+          const supabase = createClient(
+          env.SUPABASE_URL,
+          env.SUPABASE_ANON_KEY,
+          {
+            global: {
+              headers: {
+                Authorization: authHeader,
+              },
+            },
+          }
+        );
+        
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          return json({ error: 'Unauthorized' }, 401);
+        }
+        
+        const { data: guidance, error: guidanceError } = await supabase
+          .from('daily_guidance')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('guidance_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (guidanceError) {
+          return json({ error: guidanceError.message }, 500);
+        }
+        
+        if (!guidance) {
+          return json({
+            guidance: null,
+            passage: null,
+            matched_theme: null,
+          });
+        }
+        
+        let passage = null;
+        
+        if (guidance.passage_id) {
+          const { data: passageData, error: passageError } = await supabase
+            .from('scripture_passages')
+            .select('id, reference, text, translation')
+            .eq('id', guidance.passage_id)
+            .maybeSingle();
+        
+          if (passageError) {
+            return json({ error: passageError.message }, 500);
+          }
+        
+          passage = passageData;
+        }
+        
+        let matchedTheme = null;
+        
+        if (guidance.theme_id) {
+          const { data: themeData, error: themeError } = await supabase
+            .from('scripture_themes')
+            .select('id, slug, name')
+            .eq('id', guidance.theme_id)
+            .maybeSingle();
+        
+          if (themeError) {
+            return json({ error: themeError.message }, 500);
+          }
+        
+          matchedTheme = themeData;
+        }
+        
+        return json({
+          guidance,
+          passage,
+          matched_theme: matchedTheme,
+        });
+        } catch (err) {
+      return json(
+      {
+      error: err instanceof Error ? err.message : 'Failed to fetch guidance',
+      },
+      500
+      );
+      }
+      }
     }
     
     if (request.method === 'POST' && path === '/guidance') {
