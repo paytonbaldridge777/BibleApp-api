@@ -388,18 +388,58 @@ export default {
           return json({ error: 'Unauthorized' }, 401);
         }
         
-        const { data: guidance, error: guidanceError } = await supabase
+          let savedGuidance = null;
+          let saveError = null;
+          
+          if (mode === 'regenerate') {
+          const { data: existingToday } = await supabase
           .from('daily_guidance')
-          .select('*')
+          .select('id')
           .eq('user_id', user.id)
-          .order('guidance_date', { ascending: false })
+          .eq('guidance_date', guidanceDate)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        
-        if (guidanceError) {
-          return json({ error: guidanceError.message }, 500);
-        }
+          
+          if (existingToday?.id) {
+          const { data, error } = await supabase
+          .from('daily_guidance')
+          .update(insertPayload)
+          .eq('id', existingToday.id)
+          .select('*')
+          .single();
+          
+          savedGuidance = data;
+          saveError = error;
+          
+          } else {
+          const { data, error } = await supabase
+          .from('daily_guidance')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+          
+          savedGuidance = data;
+          saveError = error;
+          
+          }
+          } else {
+          const { data, error } = await supabase
+          .from('daily_guidance')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+          
+          savedGuidance = data;
+          saveError = error;
+          }
+          
+          if (saveError) {
+          return json(
+          { error: 'Failed to save generated guidance', details: saveError.message },
+          { status: 500, headers: cors }
+          );
+          }
         
         if (!guidance) {
           return json({
