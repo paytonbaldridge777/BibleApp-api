@@ -392,19 +392,31 @@ export default {
           let saveError = null;
           
           if (mode === 'regenerate') {
-          const { data: existingToday } = await supabase
+          const { data: existingToday, error: existingError } = await supabase
           .from('daily_guidance')
           .select('id')
           .eq('user_id', user.id)
           .eq('guidance_date', guidanceDate)
-          .order('created_at', { ascending: false })
-          .limit(1)
           .maybeSingle();
+          
+          if (existingError) {
+          return json(
+          { error: 'Failed to check existing guidance', details: existingError.message },
+          { status: 500, headers: cors }
+          );
+          }
           
           if (existingToday?.id) {
           const { data, error } = await supabase
           .from('daily_guidance')
-          .update(insertPayload)
+          .update({
+          theme_id: insertPayload.theme_id,
+          passage_id: insertPayload.passage_id,
+          title: insertPayload.title,
+          devotional_text: insertPayload.devotional_text,
+          prayer_text: insertPayload.prayer_text,
+          reflection_question: insertPayload.reflection_question,
+          })
           .eq('id', existingToday.id)
           .select('*')
           .single();
