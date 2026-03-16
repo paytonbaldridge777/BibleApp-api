@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+          import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
 type SpiritualProfile = {
@@ -644,23 +644,63 @@ export default {
           prayer_text: generated.prayer_text,
           reflection_question: generated.reflection_question,
         };
-    
-        const { data: inserted, error: insertError } = await supabase
-          .from('daily_guidance')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-    
-        if (insertError) {
-          return json(
-            { error: 'Failed to save generated guidance', details: insertError.message },
-            { status: 500, headers: cors }
-          );
+        
+        let savedGuidance = null;
+        let saveError = null;
+        
+        if (mode === 'regenerate') {
+        const { data: existingToday } = await supabase
+        .from('daily_guidance')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('guidance_date', guidanceDate)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+        
+        if (existingToday?.id) {
+        const { data, error } = await supabase
+        .from('daily_guidance')
+        .update(insertPayload)
+        .eq('id', existingToday.id)
+        .select('*')
+        .single();
+        
+        savedGuidance = data;
+        saveError = error;
+        
+        } else {
+        const { data, error } = await supabase
+        .from('daily_guidance')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+        
+        savedGuidance = data;
+        saveError = error;
+        
         }
+        } else {
+        const { data, error } = await supabase
+        .from('daily_guidance')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+        
+        savedGuidance = data;
+        saveError = error;
+        }
+        
+        if (saveError) {
+        return json(
+        { error: 'Failed to save generated guidance', details: saveError.message },
+        { status: 500, headers: cors }
+        );
+        }  
     
         return json(
           {
-            guidance: inserted,
+            guidance: savedGuidance,
             matched_theme: {
               id: selectedTheme.id,
               slug: selectedTheme.slug,
