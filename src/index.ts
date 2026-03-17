@@ -362,151 +362,101 @@ export default {
    }
 
     if (request.method === 'GET' && path === '/guidance') {
-      try {
-      const authHeader = request.headers.get('Authorization');
-      if (!authHeader) {
-      return json({ error: 'Missing authorization header' }, 401);
-      }
-          const supabase = createClient(
-          env.SUPABASE_URL,
-          env.SUPABASE_ANON_KEY,
-          {
+          try {
+          const authHeader = request.headers.get('Authorization');
+          if (!authHeader) {
+          return json({ error: 'Missing authorization header' }, { status: 401, headers: cors });
+          }
+          
+          const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
             global: {
               headers: {
                 Authorization: authHeader,
               },
             },
-          }
-        );
-        
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          return json({ error: 'Unauthorized' }, 401);
-        }
-        
-          let savedGuidance = null;
-          let saveError = null;
-          
-          if (mode === 'regenerate') {
-          const { data: existingToday, error: existingError } = await supabase
-          .from('daily_guidance')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('guidance_date', guidanceDate)
-          .maybeSingle();
-          
-          if (existingError) {
-          return json(
-          { error: 'Failed to check existing guidance', details: existingError.message },
-          { status: 500, headers: cors }
-          );
-          }
-          
-          if (existingToday?.id) {
-          const { data, error } = await supabase
-          .from('daily_guidance')
-          .update({
-          theme_id: insertPayload.theme_id,
-          passage_id: insertPayload.passage_id,
-          title: insertPayload.title,
-          devotional_text: insertPayload.devotional_text,
-          prayer_text: insertPayload.prayer_text,
-          reflection_question: insertPayload.reflection_question,
-          })
-          .eq('id', existingToday.id)
-          .select('*')
-          .single();
-          
-          savedGuidance = data;
-          saveError = error;
-          
-          } else {
-          const { data, error } = await supabase
-          .from('daily_guidance')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-          
-          savedGuidance = data;
-          saveError = error;
-          
-          }
-          } else {
-          const { data, error } = await supabase
-          .from('daily_guidance')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-          
-          savedGuidance = data;
-          saveError = error;
-          }
-          
-          if (saveError) {
-          return json(
-          { error: 'Failed to save generated guidance', details: saveError.message },
-          { status: 500, headers: cors }
-          );
-          }
-        
-        if (!guidance) {
-          return json({
-            guidance: null,
-            passage: null,
-            matched_theme: null,
           });
-        }
-        
-        let passage = null;
-        
-        if (guidance.passage_id) {
-          const { data: passageData, error: passageError } = await supabase
-            .from('scripture_passages')
-            .select('id, reference, text, translation')
-            .eq('id', guidance.passage_id)
-            .maybeSingle();
-        
-          if (passageError) {
-            return json({ error: passageError.message }, 500);
+          
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+          
+          if (userError || !user) {
+            return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
           }
-        
-          passage = passageData;
-        }
-        
-        let matchedTheme = null;
-        
-        if (guidance.theme_id) {
-          const { data: themeData, error: themeError } = await supabase
-            .from('scripture_themes')
-            .select('id, slug, name')
-            .eq('id', guidance.theme_id)
+          
+          const { data: guidance, error: guidanceError } = await supabase
+            .from('daily_guidance')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('guidance_date', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
-        
-          if (themeError) {
-            return json({ error: themeError.message }, 500);
+          
+          if (guidanceError) {
+            return json({ error: guidanceError.message }, { status: 500, headers: cors });
           }
-        
-          matchedTheme = themeData;
-        }
-        
-        return json({
-          guidance,
-          passage,
-          matched_theme: matchedTheme,
-        });
-        } catch (err) {
-      return json(
-      {
-      error: err instanceof Error ? err.message : 'Failed to fetch guidance',
-      },
-      500
-      );
-      }
-      }
+          
+          if (!guidance) {
+            return json(
+              {
+                guidance: null,
+                passage: null,
+                matched_theme: null,
+              },
+              { headers: cors }
+            );
+          }
+          
+          let passage = null;
+          if (guidance.passage_id) {
+            const { data: passageData, error: passageError } = await supabase
+              .from('scripture_passages')
+              .select('id, reference, text, translation')
+              .eq('id', guidance.passage_id)
+              .maybeSingle();
+          
+            if (passageError) {
+              return json({ error: passageError.message }, { status: 500, headers: cors });
+            }
+          
+            passage = passageData;
+          }
+          
+          let matchedTheme = null;
+          if (guidance.theme_id) {
+            const { data: themeData, error: themeError } = await supabase
+              .from('scripture_themes')
+              .select('id, slug, name')
+              .eq('id', guidance.theme_id)
+              .maybeSingle();
+          
+            if (themeError) {
+              return json({ error: themeError.message }, { status: 500, headers: cors });
+            }
+          
+            matchedTheme = themeData;
+          }
+          
+          return json(
+            {
+              guidance,
+              passage,
+              matched_theme: matchedTheme,
+            },
+            { headers: cors }
+          );
+          
+          } catch (err) {
+          return json(
+          {
+          error: err instanceof Error ? err.message : 'Failed to fetch guidance',
+          },
+          { status: 500, headers: cors }
+          );
+          }
+          }
     }
     
     if (request.method === 'POST' && path === '/guidance') {
@@ -698,57 +648,37 @@ export default {
         };
         
         let savedGuidance = null;
-        let saveError = null;
-        
-        if (mode === 'regenerate') {
-        const { data: existingToday } = await supabase
-        .from('daily_guidance')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('guidance_date', guidanceDate)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-        
-        if (existingToday?.id) {
-        const { data, error } = await supabase
-        .from('daily_guidance')
-        .update(insertPayload)
-        .eq('id', existingToday.id)
-        .select('*')
-        .single();
-        
-        savedGuidance = data;
-        saveError = error;
-        
-        } else {
-        const { data, error } = await supabase
-        .from('daily_guidance')
-        .insert(insertPayload)
-        .select('*')
-        .single();
-        
-        savedGuidance = data;
-        saveError = error;
-        
-        }
-        } else {
-        const { data, error } = await supabase
-        .from('daily_guidance')
-        .insert(insertPayload)
-        .select('*')
-        .single();
-        
-        savedGuidance = data;
-        saveError = error;
-        }
-        
-        if (saveError) {
-        return json(
-        { error: 'Failed to save generated guidance', details: saveError.message },
-        { status: 500, headers: cors }
-        );
-        }  
+          let saveError = null;
+          
+          if (mode === 'regenerate') {
+          const { data, error } = await supabase
+          .from('daily_guidance')
+          .upsert(insertPayload, {
+          onConflict: 'user_id,guidance_date',
+          ignoreDuplicates: false,
+          })
+          .select('*')
+          .single();
+          
+          savedGuidance = data;
+          saveError = error;
+          } else {
+          const { data, error } = await supabase
+          .from('daily_guidance')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+          
+          savedGuidance = data;
+          saveError = error;
+          }
+          
+          if (saveError) {
+          return json(
+          { error: 'Failed to save generated guidance', details: saveError.message },
+          { status: 500, headers: cors }
+          );
+}
     
         return json(
           {
