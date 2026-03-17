@@ -456,7 +456,6 @@ export default {
           { status: 500, headers: cors }
           );
           }
-          }
     }
     
     if (request.method === 'POST' && path === '/guidance') {
