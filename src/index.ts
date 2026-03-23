@@ -1,5 +1,5 @@
-          import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
 
 type SpiritualProfile = {
   user_id: string;
@@ -38,10 +38,10 @@ function normalizeSlug(value: string): string {
   return value
     .toLowerCase()
     .trim()
-    .replace(/&/g, 'and')
-    .replace(/\//g, ' ')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/&/g, "and")
+    .replace(/\//g, " ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function uniq<T>(items: T[]): T[] {
@@ -52,61 +52,61 @@ function mapProfileValueToThemeSlug(value: string): string | null {
   const slug = normalizeSlug(value);
 
   const aliasMap: Record<string, string> = {
-    peace: 'peace',
-    calm: 'peace',
-    stress: 'peace',
+    peace: "peace",
+    calm: "peace",
+    stress: "peace",
 
-    anxiety: 'anxiety',
-    worry: 'anxiety',
-    overwhelmed: 'anxiety',
+    anxiety: "anxiety",
+    worry: "anxiety",
+    overwhelmed: "anxiety",
 
-    hope: 'hope',
-    discouragement: 'hope',
-    encouragement: 'hope',
+    hope: "hope",
+    discouragement: "hope",
+    encouragement: "hope",
 
-    fear: 'fear',
-    afraid: 'fear',
-    courage: 'fear',
+    fear: "fear",
+    afraid: "fear",
+    courage: "fear",
 
-    grief: 'grief',
-    loss: 'grief',
-    sorrow: 'grief',
+    grief: "grief",
+    loss: "grief",
+    sorrow: "grief",
 
-    loneliness: 'loneliness',
-    alone: 'loneliness',
+    loneliness: "loneliness",
+    alone: "loneliness",
 
-    forgiveness: 'forgiveness',
-    guilt: 'forgiveness',
-    shame: 'forgiveness',
+    forgiveness: "forgiveness",
+    guilt: "forgiveness",
+    shame: "forgiveness",
 
-    wisdom: 'wisdom',
-    discernment: 'wisdom',
-    decisions: 'wisdom',
-    decision_making: 'wisdom',
+    wisdom: "wisdom",
+    discernment: "wisdom",
+    decisions: "wisdom",
+    decision_making: "wisdom",
 
-    purpose: 'purpose',
-    calling: 'purpose',
-    meaning: 'purpose',
+    purpose: "purpose",
+    calling: "purpose",
+    meaning: "purpose",
 
-    temptation: 'temptation',
-    temptation_struggle: 'temptation',
+    temptation: "temptation",
+    temptation_struggle: "temptation",
 
-    spiritual_growth: 'spiritual_growth',
-    growth: 'spiritual_growth',
-    maturity: 'spiritual_growth',
+    spiritual_growth: "spiritual_growth",
+    growth: "spiritual_growth",
+    maturity: "spiritual_growth",
 
-    addiction: 'addiction_strongholds',
-    strongholds: 'addiction_strongholds',
-    addiction_strongholds: 'addiction_strongholds',
+    addiction: "addiction_strongholds",
+    strongholds: "addiction_strongholds",
+    addiction_strongholds: "addiction_strongholds",
 
-    prayer: 'prayer',
+    prayer: "prayer",
 
-    trust: 'trust',
-    uncertainty: 'trust',
+    trust: "trust",
+    uncertainty: "trust",
 
-    endurance: 'endurance',
-    perseverance: 'endurance',
-    waiting: 'endurance',
+    endurance: "endurance",
+    perseverance: "endurance",
+    waiting: "endurance",
   };
 
   return aliasMap[slug] ?? slug ?? null;
@@ -122,7 +122,7 @@ function inferThemeSlugs(profile: SpiritualProfile): string[] {
     .map(mapProfileValueToThemeSlug)
     .filter((v): v is string => Boolean(v));
 
-  const defaults = ['peace', 'hope', 'trust', 'prayer'];
+  const defaults = ["peace", "hope", "trust", "prayer"];
 
   return uniq([...mapped, ...defaults]);
 }
@@ -134,7 +134,7 @@ function buildFallbackGuidance(args: {
 }) {
   const { theme, passage, profile } = args;
 
-  const tone = profile.tone_preference || 'gentle';
+  const tone = profile.tone_preference || "gentle";
   const summary =
     passage.devotional_summary ||
     `This passage speaks into seasons where ${theme.name.toLowerCase()} is especially needed.`;
@@ -149,12 +149,11 @@ function buildFallbackGuidance(args: {
     `Scripture: "${passage.text}"`;
 
   const prayerText =
-    tone === 'direct'
+    tone === "direct"
       ? `God, thank You for Your Word. Help me live the truth of ${passage.reference} today. Strengthen me where I am weak, guide my thoughts, and teach me to trust You more. Amen.`
       : `Lord, thank You for meeting me in this moment. Through ${passage.reference}, remind me that I am not alone. Calm my heart, guide my thoughts, and help me walk closely with You today. Amen.`;
 
-  const reflectionQuestion =
-    `What would it look like to live out ${passage.reference} in one specific way today?`;
+  const reflectionQuestion = `What would it look like to live out ${passage.reference} in one specific way today?`;
 
   return {
     title,
@@ -207,7 +206,7 @@ ${JSON.stringify(args.passage, null, 2)}
 `.trim();
 
   const response = await openai.responses.create({
-    model: 'gpt-4.1-mini',
+    model: "gpt-4.1-mini",
     input: prompt,
   });
 
@@ -230,29 +229,35 @@ type Env = {
 
 function json(data: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
-  headers.set('Content-Type', 'application/json');
+  headers.set("Content-Type", "application/json");
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
 function parseAllowedOrigins(env: Env): string[] {
   const raw = env.CORS_ALLOWED_ORIGINS?.trim();
   if (!raw) return [];
-  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]) {
   const headers = new Headers();
-  if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Vary', 'Origin');
+  if (
+    origin &&
+    (allowedOrigins.length === 0 || allowedOrigins.includes(origin))
+  ) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Vary", "Origin");
   }
-  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return headers;
 }
 
 function getBearerToken(request: Request): string | null {
-  const auth = request.headers.get('Authorization');
+  const auth = request.headers.get("Authorization");
   if (!auth) return null;
   const m = auth.match(/^Bearer\s+(.+)$/i);
   return m?.[1] ?? null;
@@ -273,310 +278,354 @@ function openaiClient(env: Env): OpenAI | null {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname.replace(/\/{2,}/g, '/');
+    const path = url.pathname.replace(/\/{2,}/g, "/");
 
-    const origin = request.headers.get('Origin');
+    const origin = request.headers.get("Origin");
     const allowedOrigins = parseAllowedOrigins(env);
     const cors = corsHeaders(origin, allowedOrigins);
 
-    if (request.method === 'OPTIONS') {
+    if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
 
     const token = getBearerToken(request);
     if (!token) {
-      return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+      return json({ error: "Unauthorized" }, { status: 401, headers: cors });
     }
 
     const supabase = supabaseForUser(env, token);
 
-  if (request.method === 'POST' && path === '/onboarding') {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return json({ error: 'Invalid JSON body' }, { status: 400, headers: cors });
-    }
-  
-    // Identify the user from the JWT (important: don’t trust client-provided user_id)
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    const user = userData?.user;
-    if (userErr || !user) {
-      return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
-    }
-  
-    const answers = {
-      user_id: user.id,
-      struggles: body.struggles ?? [],
-      seeking: body.seeking ?? [],
-      familiarity: body.familiarity ?? null,
-      content_types: body.content_types ?? [],
-      tone: body.tone ?? null,
-      devotional_length: body.devotional_length ?? null,
-      free_text: body.free_text ?? null,
-      updated_at: new Date().toISOString(),
-    };
-  
-    // 1) Save onboarding answers
-    const { error: answersErr } = await supabase
-      .from('onboarding_answers')
-      .upsert(answers, { onConflict: 'user_id' });
-  
-    if (answersErr) {
-      return json({ error: answersErr.message }, { status: 400, headers: cors });
-    }
-  
-    // 2) Create/update spiritual profile (simple deterministic mapping)
-    const profileSummary =
-      `Seeking: ${(answers.seeking as string[]).join(', ') || 'N/A'}. ` +
-      `Struggles: ${(answers.struggles as string[]).join(', ') || 'N/A'}.`;
-  
-    const spiritualProfile = {
-      user_id: user.id,
-      bible_experience_level: answers.familiarity,
-      main_struggles: answers.struggles,
-      current_needs: answers.seeking,
-      preferred_content_types: answers.content_types,
-      tone_preference: answers.tone,
-      devotional_length: answers.devotional_length,
-      profile_summary: profileSummary,
-      caution_flags: [],
-      updated_at: new Date().toISOString(),
-    };
-  
-    const { error: spErr } = await supabase
-      .from('spiritual_profiles')
-      .upsert(spiritualProfile, { onConflict: 'user_id' });
-  
-    if (spErr) {
-      return json({ error: spErr.message }, { status: 400, headers: cors });
-    }
-  
-    // 3) Optional: mark onboarding completed
-    await supabase
-      .from('profiles')
-      .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
-  
-    return json({ ok: true }, { headers: cors });
-   }
-
-    if (request.method === 'GET' && path === '/guidance') {
-          try {
-          const authHeader = request.headers.get('Authorization');
-          if (!authHeader) {
-          return json({ error: 'Missing authorization header' }, { status: 401, headers: cors });
-          }
-          
-          const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
-            global: {
-              headers: {
-                Authorization: authHeader,
-              },
-            },
-          });
-          
-          const {
-            data: { user },
-            error: userError,
-          } = await supabase.auth.getUser();
-          
-          if (userError || !user) {
-            return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
-          }
-          
-          const { data: guidance, error: guidanceError } = await supabase
-            .from('daily_guidance')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('guidance_date', { ascending: false })
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          
-          if (guidanceError) {
-            return json({ error: guidanceError.message }, { status: 500, headers: cors });
-          }
-          
-          if (!guidance) {
-            return json(
-              {
-                guidance: null,
-                passage: null,
-                matched_theme: null,
-              },
-              { headers: cors }
-            );
-          }
-          
-          let passage = null;
-          if (guidance.passage_id) {
-            const { data: passageData, error: passageError } = await supabase
-              .from('scripture_passages')
-              .select('id, reference, text, translation')
-              .eq('id', guidance.passage_id)
-              .maybeSingle();
-          
-            if (passageError) {
-              return json({ error: passageError.message }, { status: 500, headers: cors });
-            }
-          
-            passage = passageData;
-          }
-          
-          let matchedTheme = null;
-          if (guidance.theme_id) {
-            const { data: themeData, error: themeError } = await supabase
-              .from('scripture_themes')
-              .select('id, slug, name')
-              .eq('id', guidance.theme_id)
-              .maybeSingle();
-          
-            if (themeError) {
-              return json({ error: themeError.message }, { status: 500, headers: cors });
-            }
-          
-            matchedTheme = themeData;
-          }
-          
-          return json(
-            {
-              guidance,
-              passage,
-              matched_theme: matchedTheme,
-            },
-            { headers: cors }
-          );
-          
-          } catch (err) {
-          return json(
-          {
-          error: err instanceof Error ? err.message : 'Failed to fetch guidance',
-          },
-          { status: 500, headers: cors }
-          );
-          }
-    }
-    
-    if (request.method === 'POST' && path === '/guidance') {
+    if (request.method === "POST" && path === "/onboarding") {
+      let body: any;
       try {
-        const token = getBearerToken(request);
-        if (!token) {
-          return json({ error: 'Missing bearer token' }, { status: 401, headers: cors });
+        body = await request.json();
+      } catch {
+        return json(
+          { error: "Invalid JSON body" },
+          { status: 400, headers: cors }
+        );
+      }
+
+      // Identify the user from the JWT (important: don’t trust client-provided user_id)
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      const user = userData?.user;
+      if (userErr || !user) {
+        return json({ error: "Unauthorized" }, { status: 401, headers: cors });
+      }
+
+      const answers = {
+        user_id: user.id,
+        struggles: body.struggles ?? [],
+        seeking: body.seeking ?? [],
+        familiarity: body.familiarity ?? null,
+        content_types: body.content_types ?? [],
+        tone: body.tone ?? null,
+        devotional_length: body.devotional_length ?? null,
+        free_text: body.free_text ?? null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // 1) Save onboarding answers
+      const { error: answersErr } = await supabase
+        .from("onboarding_answers")
+        .upsert(answers, { onConflict: "user_id" });
+
+      if (answersErr) {
+        return json(
+          { error: answersErr.message },
+          { status: 400, headers: cors }
+        );
+      }
+
+      // 2) Create/update spiritual profile (simple deterministic mapping)
+      const profileSummary =
+        `Seeking: ${(answers.seeking as string[]).join(", ") || "N/A"}. ` +
+        `Struggles: ${(answers.struggles as string[]).join(", ") || "N/A"}.`;
+
+      const spiritualProfile = {
+        user_id: user.id,
+        bible_experience_level: answers.familiarity,
+        main_struggles: answers.struggles,
+        current_needs: answers.seeking,
+        preferred_content_types: answers.content_types,
+        tone_preference: answers.tone,
+        devotional_length: answers.devotional_length,
+        profile_summary: profileSummary,
+        caution_flags: [],
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: spErr } = await supabase
+        .from("spiritual_profiles")
+        .upsert(spiritualProfile, { onConflict: "user_id" });
+
+      if (spErr) {
+        return json({ error: spErr.message }, { status: 400, headers: cors });
+      }
+
+      // 3) Optional: mark onboarding completed
+      await supabase
+        .from("profiles")
+        .update({
+          onboarding_completed: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      return json({ ok: true }, { headers: cors });
+    }
+
+    if (request.method === "GET" && path === "/guidance") {
+      try {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader) {
+          return json(
+            { error: "Missing authorization header" },
+            { status: 401, headers: cors }
+          );
         }
-    
-        const supabase = supabaseForUser(env, token);
-    
+
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: authHeader,
+            },
+          },
+        });
+
         const {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-    
+
         if (userError || !user) {
-          return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+          return json(
+            { error: "Unauthorized" },
+            { status: 401, headers: cors }
+          );
         }
-    
-        let body: { mode?: 'generate' | 'regenerate'; action?: 'generate' | 'regenerate' } = {};
+
+        const { data: guidance, error: guidanceError } = await supabase
+          .from("daily_guidance")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("guidance_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (guidanceError) {
+          return json(
+            { error: guidanceError.message },
+            { status: 500, headers: cors }
+          );
+        }
+
+        if (!guidance) {
+          return json(
+            {
+              guidance: null,
+              passage: null,
+              matched_theme: null,
+            },
+            { headers: cors }
+          );
+        }
+
+        let passage = null;
+        if (guidance.passage_id) {
+          const { data: passageData, error: passageError } = await supabase
+            .from("scripture_passages")
+            .select("id, reference, text, translation")
+            .eq("id", guidance.passage_id)
+            .maybeSingle();
+
+          if (passageError) {
+            return json(
+              { error: passageError.message },
+              { status: 500, headers: cors }
+            );
+          }
+
+          passage = passageData;
+        }
+
+        let matchedTheme = null;
+        if (guidance.theme_id) {
+          const { data: themeData, error: themeError } = await supabase
+            .from("scripture_themes")
+            .select("id, slug, name")
+            .eq("id", guidance.theme_id)
+            .maybeSingle();
+
+          if (themeError) {
+            return json(
+              { error: themeError.message },
+              { status: 500, headers: cors }
+            );
+          }
+
+          matchedTheme = themeData;
+        }
+
+        return json(
+          {
+            guidance,
+            passage,
+            matched_theme: matchedTheme,
+          },
+          { headers: cors }
+        );
+      } catch (err) {
+        return json(
+          {
+            error:
+              err instanceof Error ? err.message : "Failed to fetch guidance",
+          },
+          { status: 500, headers: cors }
+        );
+      }
+    }
+
+    if (request.method === "POST" && path === "/guidance") {
+      try {
+        const token = getBearerToken(request);
+        if (!token) {
+          return json(
+            { error: "Missing bearer token" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const supabase = supabaseForUser(env, token);
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          return json(
+            { error: "Unauthorized" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        let body: {
+          mode?: "generate" | "regenerate";
+          action?: "generate" | "regenerate";
+        } = {};
         try {
           body = await request.json();
         } catch {
           body = {};
         }
-    
+
         const requestedMode = body.mode || body.action;
-        const mode = requestedMode === 'regenerate' ? 'regenerate' : 'generate';
+        const mode = requestedMode === "regenerate" ? "regenerate" : "generate";
         const guidanceDate = todayIsoDate();
-    
-        if (mode === 'generate') {
-        const { data: existing } = await supabase
-        .from('daily_guidance')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('guidance_date', guidanceDate)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-        
-        if (existing) {
-        let matchedTheme = null;
-        let passage = null;
-        
-        if (existing.theme_id) {
-          const { data: themeData } = await supabase
-            .from('scripture_themes')
-            .select('id, slug, name')
-            .eq('id', existing.theme_id)
+
+        if (mode === "generate") {
+          const { data: existing } = await supabase
+            .from("daily_guidance")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("guidance_date", guidanceDate)
+            .order("created_at", { ascending: false })
+            .limit(1)
             .maybeSingle();
-        
-          if (themeData) {
-            matchedTheme = themeData;
+
+          if (existing) {
+            let matchedTheme = null;
+            let passage = null;
+
+            if (existing.theme_id) {
+              const { data: themeData } = await supabase
+                .from("scripture_themes")
+                .select("id, slug, name")
+                .eq("id", existing.theme_id)
+                .maybeSingle();
+
+              if (themeData) {
+                matchedTheme = themeData;
+              }
+            }
+
+            if (existing.passage_id) {
+              const { data: passageData } = await supabase
+                .from("scripture_passages")
+                .select("id, reference, text, translation")
+                .eq("id", existing.passage_id)
+                .maybeSingle();
+
+              if (passageData) {
+                passage = passageData;
+              }
+            }
+
+            return json(
+              {
+                guidance: existing,
+                matched_theme: matchedTheme,
+                passage,
+              },
+              { headers: cors }
+            );
           }
         }
-        
-        if (existing.passage_id) {
-          const { data: passageData } = await supabase
-            .from('scripture_passages')
-            .select('id, reference, text, translation')
-            .eq('id', existing.passage_id)
-            .maybeSingle();
-        
-          if (passageData) {
-            passage = passageData;
-          }
-        }
-        
-        return json(
-          {
-            guidance: existing,
-            matched_theme: matchedTheme,
-            passage,
-          },
-          { headers: cors }
-        );
-        
-        }
-        }
-    
+
         const { data: profile, error: profileError } = await supabase
-          .from('spiritual_profiles')
-          .select('*')
-          .eq('user_id', user.id)
+          .from("spiritual_profiles")
+          .select("*")
+          .eq("user_id", user.id)
           .maybeSingle();
-    
+
         if (profileError) {
-          return json({ error: 'Failed to load spiritual profile' }, { status: 500, headers: cors });
+          return json(
+            { error: "Failed to load spiritual profile" },
+            { status: 500, headers: cors }
+          );
         }
-    
+
         if (!profile) {
           return json(
-            { error: 'No spiritual profile found. Please complete onboarding first.' },
+            {
+              error:
+                "No spiritual profile found. Please complete onboarding first.",
+            },
             { status: 400, headers: cors }
           );
         }
-    
+
         const themeSlugs = inferThemeSlugs(profile as SpiritualProfile);
-    
+
         const { data: themes, error: themesError } = await supabase
-          .from('scripture_themes')
-          .select('id, slug, name, description')
-          .in('slug', themeSlugs);
-    
+          .from("scripture_themes")
+          .select("id, slug, name, description")
+          .in("slug", themeSlugs);
+
         if (themesError || !themes || themes.length === 0) {
-          return json({ error: 'No matching scripture themes found' }, { status: 500, headers: cors });
+          return json(
+            { error: "No matching scripture themes found" },
+            { status: 500, headers: cors }
+          );
         }
-    
-        const themesBySlug = new Map((themes as ThemeRow[]).map((t) => [t.slug, t]));
+
+        const themesBySlug = new Map(
+          (themes as ThemeRow[]).map((t) => [t.slug, t])
+        );
         const orderedThemes = themeSlugs
           .map((slug) => themesBySlug.get(slug))
           .filter((t): t is ThemeRow => Boolean(t));
-    
+
         let selectedTheme: ThemeRow | null = null;
         let selectedPassage: PassageRow | null = null;
-    
+
         for (const theme of orderedThemes) {
           const { data: mappings, error: mappingError } = await supabase
-            .from('scripture_theme_map')
-            .select(`
+            .from("scripture_theme_map")
+            .select(
+              `
               passage_id,
               scripture_passages (
                 id,
@@ -587,40 +636,41 @@ export default {
                 translation,
                 testament
               )
-            `)
-            .eq('theme_id', theme.id)
+            `
+            )
+            .eq("theme_id", theme.id)
             .limit(10);
-    
+
           if (mappingError || !mappings || mappings.length === 0) {
             continue;
           }
-    
+
           const passages = mappings
             .map((m: any) => m.scripture_passages)
             .filter(Boolean) as PassageRow[];
-    
+
           if (passages.length === 0) continue;
-    
+
           const randomIndex = Math.floor(Math.random() * passages.length);
           selectedTheme = theme;
           selectedPassage = passages[randomIndex];
           break;
         }
-    
+
         if (!selectedTheme || !selectedPassage) {
           return json(
-            { error: 'No scripture passage found for the matched themes yet' },
+            { error: "No scripture passage found for the matched themes yet" },
             { status: 500, headers: cors }
           );
         }
-    
+
         let generated = await generateWithOpenAI({
           env,
           theme: selectedTheme,
           passage: selectedPassage,
           profile: profile as SpiritualProfile,
         });
-    
+
         if (
           !generated ||
           !generated.title ||
@@ -634,7 +684,7 @@ export default {
             profile: profile as SpiritualProfile,
           });
         }
-    
+
         const insertPayload = {
           user_id: user.id,
           theme_id: selectedTheme.id,
@@ -645,40 +695,43 @@ export default {
           prayer_text: generated.prayer_text,
           reflection_question: generated.reflection_question,
         };
-        
+
         let savedGuidance = null;
-          let saveError = null;
-          
-          if (mode === 'regenerate') {
+        let saveError = null;
+
+        if (mode === "regenerate") {
           const { data, error } = await supabase
-          .from('daily_guidance')
-          .upsert(insertPayload, {
-          onConflict: 'user_id,guidance_date',
-          ignoreDuplicates: false,
-          })
-          .select('*')
-          .single();
-          
+            .from("daily_guidance")
+            .upsert(insertPayload, {
+              onConflict: "user_id,guidance_date",
+              ignoreDuplicates: false,
+            })
+            .select("*")
+            .single();
+
           savedGuidance = data;
           saveError = error;
-          } else {
+        } else {
           const { data, error } = await supabase
-          .from('daily_guidance')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-          
+            .from("daily_guidance")
+            .insert(insertPayload)
+            .select("*")
+            .single();
+
           savedGuidance = data;
           saveError = error;
-          }
-          
-          if (saveError) {
+        }
+
+        if (saveError) {
           return json(
-          { error: 'Failed to save generated guidance', details: saveError.message },
-          { status: 500, headers: cors }
+            {
+              error: "Failed to save generated guidance",
+              details: saveError.message,
+            },
+            { status: 500, headers: cors }
           );
-}
-    
+        }
+
         return json(
           {
             guidance: savedGuidance,
@@ -698,16 +751,291 @@ export default {
         );
       } catch (error: any) {
         return json(
-          { error: 'Unexpected error generating guidance', details: error?.message ?? String(error) },
+          {
+            error: "Unexpected error generating guidance",
+            details: error?.message ?? String(error),
+          },
           { status: 500, headers: cors }
         );
       }
     }
 
-    if (request.method === 'POST' && path === '/feedback') {
-      return json({ ok: true, note: 'feedback not yet implemented' }, { headers: cors });
+    if (request.method === "POST" && path === "/favorites") {
+      try {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader) {
+          return json(
+            { error: "Missing authorization header" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: authHeader,
+            },
+          },
+        });
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          return json(
+            { error: "Unauthorized" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const body = await request.json();
+        const guidanceId = body.guidance_id;
+
+        if (!guidanceId) {
+          return json(
+            { error: "guidance_id is required" },
+            { status: 400, headers: cors }
+          );
+        }
+
+        const { data, error } = await supabase
+          .from("guidance_favorites")
+          .upsert(
+            {
+              user_id: user.id,
+              guidance_id: guidanceId,
+            },
+            {
+              onConflict: "user_id,guidance_id",
+              ignoreDuplicates: true,
+            }
+          )
+          .select("*")
+          .maybeSingle();
+
+        if (error) {
+          return json(
+            { error: "Failed to save favorite", details: error.message },
+            { status: 500, headers: cors }
+          );
+        }
+
+        return json(
+          { favorite: data ?? { user_id: user.id, guidance_id: guidanceId } },
+          { headers: cors }
+        );
+      } catch (err) {
+        return json(
+          {
+            error:
+              err instanceof Error ? err.message : "Failed to save favorite",
+          },
+          { status: 500, headers: cors }
+        );
+      }
     }
 
-    return json({ error: 'Not found', path }, { status: 404, headers: cors });
+    if (request.method === "GET" && path === "/favorites") {
+      try {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader) {
+          return json(
+            { error: "Missing authorization header" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: authHeader,
+            },
+          },
+        });
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          return json(
+            { error: "Unauthorized" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const { data: favorites, error } = await supabase
+          .from("guidance_favorites")
+          .select(
+            `
+                  id,
+                  created_at,
+                  guidance_id,
+                  daily_guidance (
+                    id,
+                    user_id,
+                    theme_id,
+                    passage_id,
+                    guidance_date,
+                    title,
+                    devotional_text,
+                    prayer_text,
+                    reflection_question,
+                    created_at
+                  )
+                `
+          )
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          return json(
+            { error: "Failed to load favorites", details: error.message },
+            { status: 500, headers: cors }
+          );
+        }
+
+        const guidanceRows = (favorites ?? [])
+          .map((f: any) => f.daily_guidance)
+          .filter(Boolean);
+
+        const passageIds = [
+          ...new Set(
+            guidanceRows.map((g: any) => g.passage_id).filter(Boolean)
+          ),
+        ];
+        const themeIds = [
+          ...new Set(guidanceRows.map((g: any) => g.theme_id).filter(Boolean)),
+        ];
+
+        let passagesById: Record<string, any> = {};
+        let themesById: Record<string, any> = {};
+
+        if (passageIds.length) {
+          const { data: passages } = await supabase
+            .from("scripture_passages")
+            .select("id, reference, text, translation")
+            .in("id", passageIds);
+
+          passagesById = Object.fromEntries(
+            (passages ?? []).map((p: any) => [p.id, p])
+          );
+        }
+
+        if (themeIds.length) {
+          const { data: themes } = await supabase
+            .from("scripture_themes")
+            .select("id, slug, name")
+            .in("id", themeIds);
+
+          themesById = Object.fromEntries(
+            (themes ?? []).map((t: any) => [t.id, t])
+          );
+        }
+
+        const results = (favorites ?? []).map((f: any) => {
+          const guidance = f.daily_guidance;
+          const passage = guidance?.passage_id
+            ? passagesById[guidance.passage_id] ?? null
+            : null;
+          const matchedTheme = guidance?.theme_id
+            ? themesById[guidance.theme_id] ?? null
+            : null;
+
+          return {
+            id: f.id,
+            created_at: f.created_at,
+            guidance,
+            passage,
+            matched_theme: matchedTheme,
+          };
+        });
+
+        return json({ favorites: results }, { headers: cors });
+      } catch (err) {
+        return json(
+          {
+            error:
+              err instanceof Error ? err.message : "Failed to load favorites",
+          },
+          { status: 500, headers: cors }
+        );
+      }
+    }
+    if (request.method === "DELETE" && path === "/favorites") {
+      try {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader) {
+          return json(
+            { error: "Missing authorization header" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: authHeader,
+            },
+          },
+        });
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          return json(
+            { error: "Unauthorized" },
+            { status: 401, headers: cors }
+          );
+        }
+
+        const body = await request.json();
+        const guidanceId = body.guidance_id;
+
+        if (!guidanceId) {
+          return json(
+            { error: "guidance_id is required" },
+            { status: 400, headers: cors }
+          );
+        }
+
+        const { error } = await supabase
+          .from("guidance_favorites")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("guidance_id", guidanceId);
+
+        if (error) {
+          return json(
+            { error: "Failed to remove favorite", details: error.message },
+            { status: 500, headers: cors }
+          );
+        }
+
+        return json({ success: true }, { headers: cors });
+      } catch (err) {
+        return json(
+          {
+            error:
+              err instanceof Error ? err.message : "Failed to remove favorite",
+          },
+          { status: 500, headers: cors }
+        );
+      }
+    }
+    if (request.method === "POST" && path === "/feedback") {
+      return json(
+        { ok: true, note: "feedback not yet implemented" },
+        { headers: cors }
+      );
+    }
+
+    return json({ error: "Not found", path }, { status: 404, headers: cors });
   },
 };
