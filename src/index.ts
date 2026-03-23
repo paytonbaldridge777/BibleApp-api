@@ -375,118 +375,103 @@ export default {
       return json({ ok: true }, { headers: cors });
     }
 
-    if (request.method === "GET" && path === "/guidance") {
-      try {
-        const authHeader = request.headers.get("Authorization");
-        if (!authHeader) {
-          return json(
-            { error: "Missing authorization header" },
-            { status: 401, headers: cors }
-          );
-        }
-
-        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
-          global: {
-            headers: {
-              Authorization: authHeader,
-            },
-          },
-        });
-
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError || !user) {
-          return json(
-            { error: "Unauthorized" },
-            { status: 401, headers: cors }
-          );
-        }
-
-        const { data: guidance, error: guidanceError } = await supabase
-          .from("daily_guidance")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("guidance_date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (guidanceError) {
-          return json(
-            { error: guidanceError.message },
-            { status: 500, headers: cors }
-          );
-        }
-
-        if (!guidance) {
-          return json(
-            {
-              guidance: null,
-              passage: null,
-              matched_theme: null,
-            },
-            { headers: cors }
-          );
-        }
-
-        let passage = null;
-        if (guidance.passage_id) {
-          const { data: passageData, error: passageError } = await supabase
-            .from("scripture_passages")
-            .select("id, reference, text, translation")
-            .eq("id", guidance.passage_id)
-            .maybeSingle();
-
-          if (passageError) {
-            return json(
-              { error: passageError.message },
-              { status: 500, headers: cors }
-            );
-          }
-
-          passage = passageData;
-        }
-
-        let matchedTheme = null;
-        if (guidance.theme_id) {
-          const { data: themeData, error: themeError } = await supabase
-            .from("scripture_themes")
-            .select("id, slug, name")
-            .eq("id", guidance.theme_id)
-            .maybeSingle();
-
-          if (themeError) {
-            return json(
-              { error: themeError.message },
-              { status: 500, headers: cors }
-            );
-          }
-
-          matchedTheme = themeData;
-        }
-
-        return json(
-          {
-            guidance,
-            passage,
-            matched_theme: matchedTheme,
-          },
-          { headers: cors }
-        );
-      } catch (err) {
-        return json(
-          {
-            error:
-              err instanceof Error ? err.message : "Failed to fetch guidance",
-          },
-          { status: 500, headers: cors }
-        );
-      }
+if (request.method === 'GET' && path === '/guidance') {
+  try {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) {
+      return json({ error: 'Missing authorization header' }, { status: 401, headers: cors });
     }
 
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+    }
+
+    const { data: guidance, error: guidanceError } = await supabase
+      .from('daily_guidance')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('guidance_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (guidanceError) {
+      return json({ error: guidanceError.message }, { status: 500, headers: cors });
+    }
+
+    if (!guidance) {
+      return json(
+        {
+          guidance: null,
+          passage: null,
+          matched_theme: null,
+        },
+        { headers: cors }
+      );
+    }
+
+    let passage = null;
+
+    if (guidance.passage_id) {
+      const { data: passageData, error: passageError } = await supabase
+        .from('scripture_passages')
+        .select('id, reference, text, translation')
+        .eq('id', guidance.passage_id)
+        .maybeSingle();
+
+      if (passageError) {
+        return json({ error: passageError.message }, { status: 500, headers: cors });
+      }
+
+      passage = passageData;
+    }
+
+    let matchedTheme = null;
+
+    if (guidance.theme_id) {
+      const { data: themeData, error: themeError } = await supabase
+        .from('scripture_themes')
+        .select('id, slug, name')
+        .eq('id', guidance.theme_id)
+        .maybeSingle();
+
+      if (themeError) {
+        return json({ error: themeError.message }, { status: 500, headers: cors });
+      }
+
+      matchedTheme = themeData;
+    }
+
+    return json(
+      {
+        guidance,
+        passage,
+        matched_theme: matchedTheme,
+      },
+      { headers: cors }
+    );
+  } catch (err) {
+    return json(
+      {
+        error: err instanceof Error ? err.message : 'Failed to fetch guidance',
+      },
+      { status: 500, headers: cors }
+    );
+  }
+}
     if (request.method === "POST" && path === "/guidance") {
       try {
         const token = getBearerToken(request);
