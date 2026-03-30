@@ -808,6 +808,7 @@ export default {
               devotional_text,
               prayer_text,
               reflection_question,
+              generation_source,
               created_at
             )
           `)
