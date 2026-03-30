@@ -604,18 +604,7 @@ export default {
           reflection_question: generated.reflection_question,
           generation_source: generationSource,
         };
-
-        const insertPayload = {
-          user_id: user.id,
-          theme_id: selectedTheme.id,
-          passage_id: selectedPassage.id,
-          guidance_date: guidanceDate,
-          title: generated.title,
-          devotional_text: generated.devotional_text,
-          prayer_text: generated.prayer_text,
-          reflection_question: generated.reflection_question,
-        };
-
+        
         let savedGuidance = null;
         let saveError = null;
 
