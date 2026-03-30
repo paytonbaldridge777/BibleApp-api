@@ -23,7 +23,10 @@ type ThemeRow = {
 type PassageRow = {
   id: string;
   reference: string;
-  text: string;
+  book_name: string;
+  chapter: number;
+  verse_start: number;
+  verse_end?: number | null;
   devotional_summary?: string | null;
   caution_notes?: string | null;
   translation?: string | null;
@@ -35,6 +38,7 @@ type Env = {
   SUPABASE_ANON_KEY: string;
   OPENAI_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
+  ASSETS: Fetcher;
 };
 
 function todayIsoDate() {
@@ -266,6 +270,7 @@ function supabaseForUser(env: Env, userJwt: string) {
 }
 
 async function loadGuidanceRelatedData(
+  env: Env,
   supabase: ReturnType<typeof createClient>,
   guidance: any
 ) {
@@ -275,11 +280,19 @@ async function loadGuidanceRelatedData(
   if (guidance?.passage_id) {
     const { data: passageData } = await supabase
       .from('scripture_passages')
-      .select('id, reference, text, translation')
+      .select(
+        'id, reference, book_name, chapter, verse_start, verse_end, translation, testament'
+      )
       .eq('id', guidance.passage_id)
       .maybeSingle();
 
-    passage = passageData ?? null;
+    if (passageData) {
+      const text = await resolvePassageText(env, passageData);
+      passage = {
+        ...passageData,
+        text,
+      };
+    }
   }
 
   if (guidance?.theme_id) {
@@ -293,6 +306,60 @@ async function loadGuidanceRelatedData(
   }
 
   return { passage, matched_theme: matchedTheme };
+}
+let bibleLookupPromise: Promise<Record<string, string>> | null = null;
+
+function normalizeBookKey(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+}
+
+async function loadBibleLookup(env: Env): Promise<Record<string, string>> {
+  if (!bibleLookupPromise) {
+    bibleLookupPromise = (async () => {
+      const response = await env.ASSETS.fetch('https://assets.local/data/web-lookup.json');
+
+      if (!response.ok) {
+        throw new Error(`Failed to load Bible lookup asset: ${response.status}`);
+      }
+
+      return (await response.json()) as Record<string, string>;
+    })();
+  }
+
+  return bibleLookupPromise;
+}
+
+async function resolvePassageText(
+  env: Env,
+  passage: {
+    book_name: string;
+    chapter: number;
+    verse_start: number;
+    verse_end?: number | null;
+  }
+): Promise<string> {
+  const lookup = await loadBibleLookup(env);
+  const book = normalizeBookKey(passage.book_name);
+  const start = passage.verse_start;
+  const end = passage.verse_end ?? passage.verse_start;
+
+  const verses: string[] = [];
+
+  for (let verse = start; verse <= end; verse++) {
+    const key = `${book}|${passage.chapter}|${verse}`;
+    const text = lookup[key];
+
+    if (!text) {
+      throw new Error(`Verse not found in Bible lookup: ${key}`);
+    }
+
+    verses.push(text.trim());
+  }
+
+  return verses.join(' ');
 }
 
 export default {
@@ -420,7 +487,7 @@ export default {
           );
         }
 
-        const related = await loadGuidanceRelatedData(supabase, guidance);
+        const related = await loadGuidanceRelatedData(env, supabase, guidance);
 
         return json(
           {
@@ -478,7 +545,7 @@ export default {
           }
 
           if (existing) {
-            const related = await loadGuidanceRelatedData(supabase, existing);
+            const related = await loadGuidanceRelatedData(env, supabase, existing);
 
             return json(
               {
@@ -528,22 +595,25 @@ export default {
         let selectedPassage: PassageRow | null = null;
 
         for (const theme of orderedThemes) {
-          const { data: mappings, error: mappingError } = await supabase
-            .from('scripture_theme_map')
-            .select(`
-              passage_id,
-              scripture_passages (
-                id,
-                reference,
-                text,
-                devotional_summary,
-                caution_notes,
-                translation,
-                testament
-              )
-            `)
-            .eq('theme_id', theme.id)
-            .limit(10);
+        const { data: mappings, error: mappingError } = await supabase
+          .from('scripture_theme_map')
+          .select(`
+            passage_id,
+            scripture_passages (
+              id,
+              reference,
+              book_name,
+              chapter,
+              verse_start,
+              verse_end,
+              devotional_summary,
+              caution_notes,
+              translation,
+              testament
+            )
+          `)
+          .eq('theme_id', theme.id)
+          .limit(10);
 
           if (mappingError || !mappings || mappings.length === 0) {
             continue;
@@ -567,11 +637,17 @@ export default {
             { status: 500, headers: cors }
           );
         }
-
-        let generated = await generateWithOpenAI({
+        
+        const selectedPassageText = await resolvePassageText(env, selectedPassage);
+        const selectedPassageWithText = {
+          ...selectedPassage,
+          text: selectedPassageText,
+        };
+        
+        generated = await generateWithOpenAI({
           env,
           theme: selectedTheme,
-          passage: selectedPassage,
+          passage: selectedPassageWithText,
           profile: profile as SpiritualProfile,
         });
         
@@ -584,11 +660,11 @@ export default {
           !generated.prayer_text ||
           !generated.reflection_question
         ) {
-          generated = buildFallbackGuidance({
-            theme: selectedTheme,
-            passage: selectedPassage,
-            profile: profile as SpiritualProfile,
-          });
+        generated = buildFallbackGuidance({
+          theme: selectedTheme,
+          passage: selectedPassageWithText,
+          profile: profile as SpiritualProfile,
+        });
         
           generationSource = 'template';
         }
@@ -647,11 +723,11 @@ export default {
               name: selectedTheme.name,
             },
             passage: {
-              id: selectedPassage.id,
-              reference: selectedPassage.reference,
-              text: selectedPassage.text,
-              translation: selectedPassage.translation,
-            },
+            id: selectedPassage.id,
+            reference: selectedPassage.reference,
+            text: selectedPassageText,
+            translation: selectedPassage.translation,
+          },
           },
           { headers: cors }
         );
@@ -822,12 +898,19 @@ export default {
         let themesById: Record<string, any> = {};
 
         if (passageIds.length) {
-          const { data: passages } = await supabase
-            .from('scripture_passages')
-            .select('id, reference, text, translation')
-            .in('id', passageIds);
-
-          passagesById = Object.fromEntries((passages ?? []).map((p: any) => [p.id, p]));
+        const { data: passages } = await supabase
+          .from('scripture_passages')
+          .select('id, reference, book_name, chapter, verse_start, verse_end, translation, testament')
+          .in('id', passageIds);
+        
+        const enrichedPassages = await Promise.all(
+          (passages ?? []).map(async (p: any) => {
+            const text = await resolvePassageText(env, p);
+            return [p.id, { ...p, text }];
+          })
+        );
+        
+        passagesById = Object.fromEntries(enrichedPassages);
         }
 
         if (themeIds.length) {
