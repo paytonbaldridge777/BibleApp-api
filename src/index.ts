@@ -644,7 +644,7 @@ export default {
           text: selectedPassageText,
         };
         
-        generated = await generateWithOpenAI({
+        let generated = await generateWithOpenAI({
           env,
           theme: selectedTheme,
           passage: selectedPassageWithText,
