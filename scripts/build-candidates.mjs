@@ -77,7 +77,7 @@ async function main() {
 
   for (const [, verses] of byChapter.entries()) {
     for (let i = 0; i < verses.length; i++) {
-      for (const length of [2, 3]) {
+      for (const length of [3]) {
         const slice = verses.slice(i, i + length);
         if (slice.length !== length) continue;
 
