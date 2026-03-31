@@ -3,13 +3,13 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "scripts": {
+    "build:candidates": "node scripts/build-candidates.mjs",
+    "classify:candidates": "node scripts/classify-candidates.mjs",
+    "promote:candidates": "node scripts/promote-candidates.mjs"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
     "openai": "^6.27.0"
-  },
-  "scripts": {
-  "build:candidates": "node scripts/build-candidates.mjs",
-  "classify:candidates": "node scripts/classify-candidates.mjs",
-  "promote:candidates": "node scripts/promote-candidates.mjs"
   }
 }
