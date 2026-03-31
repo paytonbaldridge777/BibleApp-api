@@ -68,7 +68,9 @@ async function main() {
       ...parsed,
     };
   })
-  .filter(entry => ALLOWED_BOOKS.has(entry.book_name));
+  .filter(entry =>
+    ["psalm", "proverbs", "matthew", "john", "romans", "philippians", "1_peter"].includes(entry.book_name)
+  );
 
   sortVerseEntries(verseEntries);
   const byChapter = groupByChapter(verseEntries);
@@ -101,7 +103,8 @@ async function main() {
       }
     }
   }
-
+  console.log("Verse entries:", verseEntries.length);
+  console.log("Candidates:", candidates.length);
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await fs.writeFile(OUTPUT_PATH, JSON.stringify(candidates, null, 2));
 
