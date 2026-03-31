@@ -4,7 +4,15 @@ import path from "path";
 
 const LOOKUP_PATH = path.resolve("public/data/web-lookup.json");
 const OUTPUT_PATH = path.resolve("data/generated/passage-candidates.json");
-
+const ALLOWED_BOOKS = new Set([
+  "psalm",
+  "proverbs",
+  "matthew",
+  "john",
+  "romans",
+  "philippians",
+  "1_peter"
+]);
 function parseKey(key) {
   const [book_name, chapter, verse] = key.split("|");
   return {
@@ -51,14 +59,16 @@ async function main() {
   const raw = await fs.readFile(LOOKUP_PATH, "utf8");
   const lookup = JSON.parse(raw);
 
-  const verseEntries = Object.entries(lookup).map(([key, text]) => {
+  const verseEntries = Object.entries(lookup)
+  .map(([key, text]) => {
     const parsed = parseKey(key);
     return {
       key,
       text,
       ...parsed,
     };
-  });
+  })
+  .filter(entry => ALLOWED_BOOKS.has(entry.book_name));
 
   sortVerseEntries(verseEntries);
   const byChapter = groupByChapter(verseEntries);
