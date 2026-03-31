@@ -1,6 +1,53 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
+type ThemeMapRow = {
+  passage_id: string;
+  weight: number | null;
+};
+
+type ScripturePassageRow = {
+  id: string;
+  reference: string;
+  book_name: string;
+  chapter: number;
+  verse_start: number;
+  verse_end: number | null;
+};
+
+function randomFromArray<T>(items: T[]): T | null {
+  if (!items.length) return null;
+  return items[Math.floor(Math.random() * items.length)] ?? null;
+}
+
+function weightedRandomPick<T extends { weight?: number | null }>(items: T[]): T | null {
+  if (!items.length) return null;
+
+  const normalized = items.map((item) => ({
+    item,
+    weight: Number.isFinite(Number(item.weight)) && Number(item.weight) > 0
+      ? Number(item.weight)
+      : 1,
+  }));
+
+  const total = normalized.reduce((sum, entry) => sum + entry.weight, 0);
+
+  if (total <= 0) {
+    return randomFromArray(items);
+  }
+
+  let roll = Math.random() * total;
+
+  for (const entry of normalized) {
+    roll -= entry.weight;
+    if (roll <= 0) {
+      return entry.item;
+    }
+  }
+
+  return normalized[normalized.length - 1]?.item ?? null;
+}
+
 type SpiritualProfile = {
   user_id: string;
   bible_experience_level?: string | null;
@@ -598,6 +645,7 @@ export default {
         const { data: mappings, error: mappingError } = await supabase
           .from('scripture_theme_map')
           .select(`
+            weight,
             passage_id,
             scripture_passages (
               id,
@@ -613,22 +661,46 @@ export default {
             )
           `)
           .eq('theme_id', theme.id)
-          .limit(10);
+          .order('weight', { ascending: false })
+          .limit(25);
 
-          if (mappingError || !mappings || mappings.length === 0) {
-            continue;
+        if (mappingError || !mappings || mappings.length === 0) {
+          continue;
+        }
+
+        const weightedPassages = mappings
+          .map((m: any) => {
+            const passage = m.scripture_passages;
+            if (!passage) return null;
+
+            return {
+              ...passage,
+              weight: Number(m.weight ?? 1),
+            };
+          })
+          .filter(Boolean) as Array<PassageRow & { weight: number }>;
+
+        if (weightedPassages.length === 0) continue;
+
+        const totalWeight = weightedPassages.reduce(
+          (sum, passage) => sum + (passage.weight > 0 ? passage.weight : 1),
+          0
+        );
+
+        let roll = Math.random() * totalWeight;
+        let picked: (PassageRow & { weight: number }) | null = null;
+
+        for (const passage of weightedPassages) {
+          roll -= passage.weight > 0 ? passage.weight : 1;
+          if (roll <= 0) {
+            picked = passage;
+            break;
           }
+        }
 
-          const passages = mappings
-            .map((m: any) => m.scripture_passages)
-            .filter(Boolean) as PassageRow[];
-
-          if (passages.length === 0) continue;
-
-          const randomIndex = Math.floor(Math.random() * passages.length);
-          selectedTheme = theme;
-          selectedPassage = passages[randomIndex];
-          break;
+        selectedTheme = theme;
+        selectedPassage = picked ?? weightedPassages[weightedPassages.length - 1];
+        break;
         }
 
         if (!selectedTheme || !selectedPassage) {
