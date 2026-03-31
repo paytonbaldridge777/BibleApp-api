@@ -1,7 +1,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-
+console.log("USING FILTERED BUILD");
 const LOOKUP_PATH = path.resolve("public/data/web-lookup.json");
 const OUTPUT_PATH = path.resolve("data/generated/passage-candidates.json");
 const ALLOWED_BOOKS = new Set([
