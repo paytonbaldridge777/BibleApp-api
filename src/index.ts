@@ -289,20 +289,33 @@ Return valid JSON only with this exact shape:
 }
 
 Rules:
-- Be biblically grounded and pastoral.
-- Be encouraging, calm, and clear.
-- Do not be preachy, manipulative, or overly dramatic.
+- Be biblically grounded and pastoral in the devotional, prayer, and reflection.
+- Do not include markdown.
 - Keep context_text to about 90-140 words.
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
-- Use the scripture passage naturally.
-- Do not mention denominations.
-- Do not include markdown.
-- For context_text, explain only well-established context.
-- Do not speculate or invent historical details.
-- If the context is uncertain, say so plainly and keep it general and factual.
-- Context should help a newer Bible reader understand what is happening around the verse, who is being addressed when clear, and how the verse fits the surrounding passage.
+
+Context_text rules:
+- context_text must be informational, not devotional.
+- Do NOT encourage, comfort, exhort, or apply the verse personally in context_text.
+- Do NOT repeat the devotional in different words.
+- Focus on historical, literary, and audience context.
+- Prefer this order when possible:
+  1. who is speaking/writing
+  2. who is being addressed
+  3. what is happening in the surrounding passage
+  4. important cultural or historical background that is well-established
+  5. how this verse functions in the argument or flow of the passage
+- If something is uncertain or debated, say so briefly and plainly.
+- Do not invent details.
+- Do not overstate scholarly interpretations as fact.
+- Avoid phrases like "this reminds us," "this encourages believers," "we can trust," or other devotional language in context_text.
+- context_text should read like a study Bible note for a beginner.
+
+Devotional_text rules:
+- devotional_text should be the personal, pastoral application section.
+- It may encourage, comfort, and apply the truth of the passage to the reader.
 
 User profile:
 ${JSON.stringify(args.profile, null, 2)}
