@@ -25,9 +25,10 @@ function weightedRandomPick<T extends { weight?: number | null }>(items: T[]): T
 
   const normalized = items.map((item) => ({
     item,
-    weight: Number.isFinite(Number(item.weight)) && Number(item.weight) > 0
-      ? Number(item.weight)
-      : 1,
+    weight:
+      Number.isFinite(Number(item.weight)) && Number(item.weight) > 0
+        ? Number(item.weight)
+        : 1,
   }));
 
   const total = normalized.reduce((sum, entry) => sum + entry.weight, 0);
@@ -78,6 +79,15 @@ type PassageRow = {
   caution_notes?: string | null;
   translation?: string | null;
   testament?: string | null;
+  text?: string | null;
+};
+
+type GeneratedGuidance = {
+  title: string;
+  context_text: string;
+  devotional_text: string;
+  prayer_text: string;
+  reflection_question: string;
 };
 
 type Env = {
@@ -171,10 +181,7 @@ function mapProfileValueToThemeSlug(value: string): string | null {
 }
 
 function inferThemeSlugs(profile: SpiritualProfile): string[] {
-  const rawValues = [
-    ...(profile.main_struggles ?? []),
-    ...(profile.current_needs ?? []),
-  ];
+  const rawValues = [...(profile.main_struggles ?? []), ...(profile.current_needs ?? [])];
 
   const mapped = rawValues
     .map(mapProfileValueToThemeSlug)
@@ -185,11 +192,43 @@ function inferThemeSlugs(profile: SpiritualProfile): string[] {
   return uniq([...mapped, ...defaults]);
 }
 
+function stripCodeFences(value: string): string {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith('```')) {
+    return trimmed
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  }
+
+  return trimmed;
+}
+
+function isGeneratedGuidance(value: unknown): value is GeneratedGuidance {
+  if (!value || typeof value !== 'object') return false;
+
+  const obj = value as Record<string, unknown>;
+
+  return (
+    typeof obj.title === 'string' &&
+    obj.title.trim().length > 0 &&
+    typeof obj.context_text === 'string' &&
+    obj.context_text.trim().length > 0 &&
+    typeof obj.devotional_text === 'string' &&
+    obj.devotional_text.trim().length > 0 &&
+    typeof obj.prayer_text === 'string' &&
+    obj.prayer_text.trim().length > 0 &&
+    typeof obj.reflection_question === 'string' &&
+    obj.reflection_question.trim().length > 0
+  );
+}
+
 function buildFallbackGuidance(args: {
   theme: ThemeRow;
   passage: PassageRow;
   profile: SpiritualProfile;
-}) {
+}): GeneratedGuidance {
   const { theme, passage, profile } = args;
 
   const tone = profile.tone_preference || 'gentle';
@@ -199,23 +238,28 @@ function buildFallbackGuidance(args: {
 
   const title = `${theme.name}: ${passage.reference}`;
 
+  const contextText =
+    `This passage comes from ${passage.book_name} ${passage.chapter} and should be read as part of the surrounding section, not in isolation. ` +
+    `It speaks to themes of ${theme.name.toLowerCase()} and invites the reader to notice what God is revealing through the broader passage. ` +
+    `Where the historical or situational details are not certain from our current data, it is best to stay with the clear meaning of the text itself and read the verses around ${passage.reference} for fuller context.`;
+
   const devotionalText =
     `${summary}\n\n` +
     `Today’s focus is ${theme.name.toLowerCase()}. ` +
     `As you reflect on ${passage.reference}, notice what this verse reveals about God’s character and care. ` +
     `Rather than trying to carry everything alone, let this truth slow you down and re-center your heart in God’s presence.\n\n` +
-    `Scripture: "${passage.text}"`;
+    `Scripture: "${passage.text ?? ''}"`;
 
   const prayerText =
     tone === 'direct'
       ? `God, thank You for Your Word. Help me live the truth of ${passage.reference} today. Strengthen me where I am weak, guide my thoughts, and teach me to trust You more. Amen.`
       : `Lord, thank You for meeting me in this moment. Through ${passage.reference}, remind me that I am not alone. Calm my heart, guide my thoughts, and help me walk closely with You today. Amen.`;
 
-  const reflectionQuestion =
-    `What would it look like to live out ${passage.reference} in one specific way today?`;
+  const reflectionQuestion = `What would it look like to live out ${passage.reference} in one specific way today?`;
 
   return {
     title,
+    context_text: contextText,
     devotional_text: devotionalText,
     prayer_text: prayerText,
     reflection_question: reflectionQuestion,
@@ -227,7 +271,7 @@ async function generateWithOpenAI(args: {
   theme: ThemeRow;
   passage: PassageRow;
   profile: SpiritualProfile;
-}) {
+}): Promise<GeneratedGuidance | null> {
   if (!args.env.OPENAI_API_KEY) return null;
 
   const openai = new OpenAI({ apiKey: args.env.OPENAI_API_KEY });
@@ -238,6 +282,7 @@ You are writing a short Christian devotional for a Bible guidance app.
 Return valid JSON only with this exact shape:
 {
   "title": string,
+  "context_text": string,
   "devotional_text": string,
   "prayer_text": string,
   "reflection_question": string
@@ -247,12 +292,17 @@ Rules:
 - Be biblically grounded and pastoral.
 - Be encouraging, calm, and clear.
 - Do not be preachy, manipulative, or overly dramatic.
+- Keep context_text to about 90-140 words.
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
 - Use the scripture passage naturally.
 - Do not mention denominations.
 - Do not include markdown.
+- For context_text, explain only well-established context.
+- Do not speculate or invent historical details.
+- If the context is uncertain, say so plainly and keep it general and factual.
+- Context should help a newer Bible reader understand what is happening around the verse, who is being addressed when clear, and how the verse fits the surrounding passage.
 
 User profile:
 ${JSON.stringify(args.profile, null, 2)}
@@ -273,7 +323,8 @@ ${JSON.stringify(args.passage, null, 2)}
   if (!text) return null;
 
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(stripCodeFences(text));
+    return isGeneratedGuidance(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -354,13 +405,11 @@ async function loadGuidanceRelatedData(
 
   return { passage, matched_theme: matchedTheme };
 }
+
 let bibleLookupPromise: Promise<Record<string, string>> | null = null;
 
 function normalizeBookKey(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '_');
+  return value.toLowerCase().trim().replace(/\s+/g, '_');
 }
 
 async function loadBibleLookup(env: Env): Promise<Record<string, string>> {
@@ -642,65 +691,52 @@ export default {
         let selectedPassage: PassageRow | null = null;
 
         for (const theme of orderedThemes) {
-        const { data: mappings, error: mappingError } = await supabase
-          .from('scripture_theme_map')
-          .select(`
-            weight,
-            passage_id,
-            scripture_passages (
-              id,
-              reference,
-              book_name,
-              chapter,
-              verse_start,
-              verse_end,
-              devotional_summary,
-              caution_notes,
-              translation,
-              testament
-            )
-          `)
-          .eq('theme_id', theme.id)
-          .order('weight', { ascending: false })
-          .limit(25);
+          const { data: mappings, error: mappingError } = await supabase
+            .from('scripture_theme_map')
+            .select(`
+              weight,
+              passage_id,
+              scripture_passages (
+                id,
+                reference,
+                book_name,
+                chapter,
+                verse_start,
+                verse_end,
+                devotional_summary,
+                caution_notes,
+                translation,
+                testament
+              )
+            `)
+            .eq('theme_id', theme.id)
+            .order('weight', { ascending: false })
+            .limit(25);
 
-        if (mappingError || !mappings || mappings.length === 0) {
-          continue;
-        }
-
-        const weightedPassages = mappings
-          .map((m: any) => {
-            const passage = m.scripture_passages;
-            if (!passage) return null;
-
-            return {
-              ...passage,
-              weight: Number(m.weight ?? 1),
-            };
-          })
-          .filter(Boolean) as Array<PassageRow & { weight: number }>;
-
-        if (weightedPassages.length === 0) continue;
-
-        const totalWeight = weightedPassages.reduce(
-          (sum, passage) => sum + (passage.weight > 0 ? passage.weight : 1),
-          0
-        );
-
-        let roll = Math.random() * totalWeight;
-        let picked: (PassageRow & { weight: number }) | null = null;
-
-        for (const passage of weightedPassages) {
-          roll -= passage.weight > 0 ? passage.weight : 1;
-          if (roll <= 0) {
-            picked = passage;
-            break;
+          if (mappingError || !mappings || mappings.length === 0) {
+            continue;
           }
-        }
 
-        selectedTheme = theme;
-        selectedPassage = picked ?? weightedPassages[weightedPassages.length - 1];
-        break;
+          const weightedPassages = mappings
+            .map((m: any) => {
+              const passage = m.scripture_passages;
+              if (!passage) return null;
+
+              return {
+                ...passage,
+                weight: Number(m.weight ?? 1),
+              };
+            })
+            .filter(Boolean) as Array<PassageRow & { weight: number }>;
+
+          if (weightedPassages.length === 0) continue;
+
+          const picked = weightedRandomPick(weightedPassages);
+          if (!picked) continue;
+
+          selectedTheme = theme;
+          selectedPassage = picked;
+          break;
         }
 
         if (!selectedTheme || !selectedPassage) {
@@ -709,50 +745,45 @@ export default {
             { status: 500, headers: cors }
           );
         }
-        
+
         const selectedPassageText = await resolvePassageText(env, selectedPassage);
-        const selectedPassageWithText = {
+        const selectedPassageWithText: PassageRow = {
           ...selectedPassage,
           text: selectedPassageText,
         };
-        
+
         let generated = await generateWithOpenAI({
           env,
           theme: selectedTheme,
           passage: selectedPassageWithText,
           profile: profile as SpiritualProfile,
         });
-        
+
         let generationSource: 'ai' | 'template' = 'ai';
-        
-        if (
-          !generated ||
-          !generated.title ||
-          !generated.devotional_text ||
-          !generated.prayer_text ||
-          !generated.reflection_question
-        ) {
-        generated = buildFallbackGuidance({
-          theme: selectedTheme,
-          passage: selectedPassageWithText,
-          profile: profile as SpiritualProfile,
-        });
-        
+
+        if (!generated) {
+          generated = buildFallbackGuidance({
+            theme: selectedTheme,
+            passage: selectedPassageWithText,
+            profile: profile as SpiritualProfile,
+          });
+
           generationSource = 'template';
         }
-        
+
         const insertPayload = {
           user_id: user.id,
           theme_id: selectedTheme.id,
           passage_id: selectedPassage.id,
           guidance_date: guidanceDate,
           title: generated.title,
+          context_text: generated.context_text,
           devotional_text: generated.devotional_text,
           prayer_text: generated.prayer_text,
           reflection_question: generated.reflection_question,
           generation_source: generationSource,
         };
-        
+
         let savedGuidance = null;
         let saveError = null;
 
@@ -795,11 +826,11 @@ export default {
               name: selectedTheme.name,
             },
             passage: {
-            id: selectedPassage.id,
-            reference: selectedPassage.reference,
-            text: selectedPassageText,
-            translation: selectedPassage.translation,
-          },
+              id: selectedPassage.id,
+              reference: selectedPassage.reference,
+              text: selectedPassageText,
+              translation: selectedPassage.translation,
+            },
           },
           { headers: cors }
         );
@@ -942,6 +973,7 @@ export default {
               passage_id,
               guidance_date,
               title,
+              context_text,
               devotional_text,
               prayer_text,
               reflection_question,
@@ -959,9 +991,7 @@ export default {
           );
         }
 
-        const guidanceRows = (favorites ?? [])
-          .map((f: any) => f.daily_guidance)
-          .filter(Boolean);
+        const guidanceRows = (favorites ?? []).map((f: any) => f.daily_guidance).filter(Boolean);
 
         const passageIds = [...new Set(guidanceRows.map((g: any) => g.passage_id).filter(Boolean))];
         const themeIds = [...new Set(guidanceRows.map((g: any) => g.theme_id).filter(Boolean))];
@@ -970,19 +1000,19 @@ export default {
         let themesById: Record<string, any> = {};
 
         if (passageIds.length) {
-        const { data: passages } = await supabase
-          .from('scripture_passages')
-          .select('id, reference, book_name, chapter, verse_start, verse_end, translation, testament')
-          .in('id', passageIds);
-        
-        const enrichedPassages = await Promise.all(
-          (passages ?? []).map(async (p: any) => {
-            const text = await resolvePassageText(env, p);
-            return [p.id, { ...p, text }];
-          })
-        );
-        
-        passagesById = Object.fromEntries(enrichedPassages);
+          const { data: passages } = await supabase
+            .from('scripture_passages')
+            .select('id, reference, book_name, chapter, verse_start, verse_end, translation, testament')
+            .in('id', passageIds);
+
+          const enrichedPassages = await Promise.all(
+            (passages ?? []).map(async (p: any) => {
+              const text = await resolvePassageText(env, p);
+              return [p.id, { ...p, text }];
+            })
+          );
+
+          passagesById = Object.fromEntries(enrichedPassages);
         }
 
         if (themeIds.length) {
