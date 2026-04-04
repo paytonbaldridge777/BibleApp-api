@@ -332,7 +332,7 @@ async function generateWithOpenAI(args: {
   `.trim();
 
   const response = await openai.responses.create({
-    model: 'gpt-4.1-mini',
+    model: 'gpt-5.4',
     input: prompt,
   });
 
