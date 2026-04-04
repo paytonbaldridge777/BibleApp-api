@@ -238,11 +238,11 @@ function buildFallbackGuidance(args: {
 
   const title = `${theme.name}: ${passage.reference}`;
 
-  const contextText =
-    `This passage comes from ${passage.book_name} ${passage.chapter} and should be read as part of the surrounding section, not in isolation. ` +
-    `It speaks to themes of ${theme.name.toLowerCase()} and invites the reader to notice what God is revealing through the broader passage. ` +
-    `Where the historical or situational details are not certain from our current data, it is best to stay with the clear meaning of the text itself and read the verses around ${passage.reference} for fuller context.`;
-
+const contextText = `This passage comes from ${passage.book_name} ${passage.chapter} and should be read within the flow of the surrounding section, not as an isolated quote.\n\n`
+   `In Scripture, themes like ${theme.name.toLowerCase()} are often presented not merely as private comfort, but as part of God's covenant relationship with His people and His instruction for faithful living. `
+   `Where the historical setting is not fully clear from the text alone, the safest reading is to pay close attention to the passage's literary flow, imagery, and purpose in context. `
+   `Reading the verses around ${passage.reference} helps show how this verse functions within the larger argument, prayer, or act of worship.`;
+  
   const devotionalText =
     `${summary}\n\n` +
     `Today’s focus is ${theme.name.toLowerCase()}. ` +
@@ -277,55 +277,59 @@ async function generateWithOpenAI(args: {
   const openai = new OpenAI({ apiKey: args.env.OPENAI_API_KEY });
 
   const prompt = `
-You are writing a short Christian devotional for a Bible guidance app.
-
-Return valid JSON only with this exact shape:
-{
-  "title": string,
-  "context_text": string,
-  "devotional_text": string,
-  "prayer_text": string,
-  "reflection_question": string
-}
-
-Rules:
-- Be biblically grounded and pastoral in the devotional, prayer, and reflection.
-- Do not include markdown.
-- Keep context_text to about 90-140 words.
-- Keep devotional_text to about 120-180 words.
-- Keep prayer_text to 40-80 words.
-- Keep reflection_question to one sentence.
-
-Context_text rules:
-- context_text must be informational, not devotional.
-- Do NOT encourage, comfort, exhort, or apply the verse personally in context_text.
-- Do NOT repeat the devotional in different words.
-- Focus on historical, literary, and audience context.
-- Prefer this order when possible:
-  1. who is speaking/writing
-  2. who is being addressed
-  3. what is happening in the surrounding passage
-  4. important cultural or historical background that is well-established
-  5. how this verse functions in the argument or flow of the passage
-- If something is uncertain or debated, say so briefly and plainly.
-- Do not invent details.
-- Do not overstate scholarly interpretations as fact.
-- Avoid phrases like "this reminds us," "this encourages believers," "we can trust," or other devotional language in context_text.
-- context_text should read like a study Bible note for a beginner.
-
-Devotional_text rules:
-- devotional_text should be the personal, pastoral application section.
-- It may encourage, comfort, and apply the truth of the passage to the reader.
-
-User profile:
-${JSON.stringify(args.profile, null, 2)}
-
-Theme:
-${JSON.stringify(args.theme, null, 2)}
-
-Passage:
-${JSON.stringify(args.passage, null, 2)}
-`.trim();
+  You are writing a short Christian devotional for a Bible guidance app.
+  
+  Return valid JSON only with this exact shape:
+  {
+    "title": string,
+    "context_text": string,
+    "devotional_text": string,
+    "prayer_text": string,
+    "reflection_question": string
+  }
+  
+  General rules:
+  - Be biblically grounded and pastoral in the devotional, prayer, and reflection.
+  - Do not include markdown.
+  - Keep context_text to about 110-170 words.
+  - Keep devotional_text to about 120-180 words.
+  - Keep prayer_text to 40-80 words.
+  - Keep reflection_question to one sentence.
+  
+  context_text rules:
+  - context_text must be informational, not devotional.
+  - Do NOT encourage, comfort, exhort, or apply the verse personally in context_text.
+  - Do NOT repeat the devotional in different words.
+  - Do more than summarize the nearby verses.
+  - Focus on biblical, literary, covenantal, and cultural context when reasonably supported by the passage.
+  - Prioritize what the original audience, worshiping community, or first hearers would likely have understood.
+  - When relevant, explain meaningful imagery, symbolism, worship language, covenant themes, or ancient assumptions that modern readers may miss.
+  - Include at least one concrete insight that adds depth beyond paraphrase.
+  - Prefer this order when possible:
+    1. who is speaking or writing
+    2. who is being addressed
+    3. what is happening in the surrounding passage
+    4. important cultural, covenantal, literary, or historical background that is reasonably well-established
+    5. how this verse functions in the flow of the passage
+  - If something is uncertain or debated, say so briefly and plainly.
+  - Do not invent details.
+  - Do not overstate scholarly interpretations as fact.
+  - Avoid generic phrases like "this reminds us," "this encourages believers," or "we can trust" in context_text.
+  - Write with depth and clarity, like a strong biblical study note for an intelligent modern reader, not a shallow summary.
+  
+  devotional_text rules:
+  - devotional_text should be the personal, pastoral application section.
+  - It may encourage, comfort, and apply the truth of the passage to the reader.
+  
+  User profile:
+  ${JSON.stringify(args.profile, null, 2)}
+  
+  Theme:
+  ${JSON.stringify(args.theme, null, 2)}
+  
+  Passage:
+  ${JSON.stringify(args.passage, null, 2)}
+  `.trim();
 
   const response = await openai.responses.create({
     model: 'gpt-4.1-mini',
