@@ -331,18 +331,30 @@ async function generateWithOpenAI(args: {
   ${JSON.stringify(args.passage, null, 2)}
   `.trim();
 
-  const response = await openai.responses.create({
-    model: 'gpt-5.4',
+const response = await openai.responses.create({
+    model: "gpt-5.4-mini",          // ← Changed here (or use "gpt-5.4" if you prefer flagship)
     input: prompt,
+    temperature: 0.7,
+    max_output_tokens: 1200,
   });
 
+  // ← ADD THESE LINES to verify the model
+  console.log(`[OpenAI Response] Model actually used: ${response.model}`);
+  console.log(`[OpenAI Response] Response ID: ${response.id}`);
+  // Optional: log usage if available
+  // console.log(`[OpenAI Usage]`, response.usage);
+
   const text = response.output_text?.trim();
-  if (!text) return null;
+  if (!text) {
+    console.log("[OpenAI] No output_text received");
+    return null;
+  }
 
   try {
     const parsed = JSON.parse(stripCodeFences(text));
     return isGeneratedGuidance(parsed) ? parsed : null;
-  } catch {
+  } catch (e) {
+    console.log("[OpenAI] JSON parse failed:", e);
     return null;
   }
 }
