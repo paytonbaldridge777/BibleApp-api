@@ -180,24 +180,31 @@ function mapProfileValueToThemeSlug(value: string): string | null {
   return aliasMap[slug] ?? slug ?? null;
 }
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function inferThemeSlugs(profile: SpiritualProfile): string[] {
   const rawValues = [...(profile.main_struggles ?? []), ...(profile.current_needs ?? [])];
 
-  const mapped = rawValues
-    .map(mapProfileValueToThemeSlug)
-    .filter((v): v is string => Boolean(v));
+  const profileSlugs = uniq(
+    rawValues
+      .map(mapProfileValueToThemeSlug)
+      .filter((v): v is string => Boolean(v))
+  );
 
+  // Defaults are fallback only - excluded if already in profile slugs
   const defaults = ['peace', 'hope', 'trust', 'prayer'];
+  const fallbackSlugs = defaults.filter((d) => !profileSlugs.includes(d));
 
-  const slugs = uniq([...mapped, ...defaults]);
-
-  // Shuffle so no single theme dominates by position
-  for (let i = slugs.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [slugs[i], slugs[j]] = [slugs[j], slugs[i]];
-  }
-
-  return slugs;
+  // Profile-matched themes always tried first (shuffled within group for variety)
+  // Fallbacks only reached if no profile theme has passages
+  return [...shuffleArray(profileSlugs), ...shuffleArray(fallbackSlugs)];
 }
 
 function stripCodeFences(value: string): string {
