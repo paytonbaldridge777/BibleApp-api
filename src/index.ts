@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 type ThemeMapRow = {
   passage_id: string;
@@ -93,7 +93,7 @@ type GeneratedGuidance = {
 type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
 };
@@ -266,87 +266,78 @@ const contextText = `This passage comes from ${passage.book_name} ${passage.chap
   };
 }
 
-async function generateWithOpenAI(args: {
+async function generateWithClaude(args: {
   env: Env;
   theme: ThemeRow;
   passage: PassageRow;
   profile: SpiritualProfile;
 }): Promise<GeneratedGuidance | null> {
-  if (!args.env.OPENAI_API_KEY) return null;
+  if (!args.env.ANTHROPIC_API_KEY) return null;
 
-  const openai = new OpenAI({ apiKey: args.env.OPENAI_API_KEY });
+  const anthropic = new Anthropic({ apiKey: args.env.ANTHROPIC_API_KEY });
 
-  const prompt = `
-  You are writing a short Christian devotional for a Bible guidance app.
-  
-  Return valid JSON only with this exact shape:
-  {
-    "title": string,
-    "context_text": string,
-    "devotional_text": string,
-    "prayer_text": string,
-    "reflection_question": string
-  }
-  
-  General rules:
-  - Be biblically grounded and pastoral in the devotional, prayer, and reflection.
-  - Do not include markdown.
-  - Keep context_text to about 110-170 words.
-  - Keep devotional_text to about 120-180 words.
-  - Keep prayer_text to 40-80 words.
-  - Keep reflection_question to one sentence.
-  
-  context_text rules:
-  - context_text must be informational, not devotional.
-  - Do NOT encourage, comfort, exhort, or apply the verse personally in context_text.
-  - Do NOT repeat the devotional in different words.
-  - Do more than summarize the nearby verses.
-  - Focus on biblical, literary, covenantal, and cultural context when reasonably supported by the passage.
-  - Prioritize what the original audience, worshiping community, or first hearers would likely have understood.
-  - When relevant, explain meaningful imagery, symbolism, worship language, covenant themes, or ancient assumptions that modern readers may miss.
-  - Include at least one concrete insight that adds depth beyond paraphrase.
-  - Prefer this order when possible:
-    1. who is speaking or writing
-    2. who is being addressed
-    3. what is happening in the surrounding passage
-    4. important cultural, covenantal, literary, or historical background that is reasonably well-established
-    5. how this verse functions in the flow of the passage
-  - If something is uncertain or debated, say so briefly and plainly.
-  - Do not invent details.
-  - Do not overstate scholarly interpretations as fact.
-  - Avoid generic phrases like "this reminds us," "this encourages believers," or "we can trust" in context_text.
-  - Write with depth and clarity, like a strong biblical study note for an intelligent modern reader, not a shallow summary.
-  
-  devotional_text rules:
-  - devotional_text should be the personal, pastoral application section.
-  - It may encourage, comfort, and apply the truth of the passage to the reader.
-  
-  User profile:
-  ${JSON.stringify(args.profile, null, 2)}
-  
-  Theme:
-  ${JSON.stringify(args.theme, null, 2)}
-  
-  Passage:
-  ${JSON.stringify(args.passage, null, 2)}
-  `.trim();
+  const prompt = `You are writing a short Christian devotional for a Bible guidance app.
 
-const response = await openai.responses.create({
-    model: "gpt-5.4-mini",          // ← Changed here (or use "gpt-5.4" if you prefer flagship)
-    input: prompt,
-    temperature: 0.7,
-    max_output_tokens: 1200,
+Return valid JSON only with this exact shape:
+{
+  "title": string,
+  "context_text": string,
+  "devotional_text": string,
+  "prayer_text": string,
+  "reflection_question": string
+}
+
+General rules:
+- Be biblically grounded and pastoral in the devotional, prayer, and reflection.
+- Do not include markdown.
+- Keep context_text to about 110-170 words.
+- Keep devotional_text to about 120-180 words.
+- Keep prayer_text to 40-80 words.
+- Keep reflection_question to one sentence.
+
+context_text rules:
+- context_text must be informational, not devotional.
+- Do NOT encourage, comfort, exhort, or apply the verse personally in context_text.
+- Do NOT repeat the devotional in different words.
+- Do more than summarize the nearby verses.
+- Focus on biblical, literary, covenantal, and cultural context when reasonably supported by the passage.
+- Prioritize what the original audience, worshiping community, or first hearers would likely have understood.
+- When relevant, explain meaningful imagery, symbolism, worship language, covenant themes, or ancient assumptions that modern readers may miss.
+- Include at least one concrete insight that adds depth beyond paraphrase.
+- Prefer this order when possible:
+  1. who is speaking or writing
+  2. who is being addressed
+  3. what is happening in the surrounding passage
+  4. important cultural, covenantal, literary, or historical background that is reasonably well-established
+  5. how this verse functions in the flow of the passage
+- If something is uncertain or debated, say so briefly and plainly.
+- Do not invent details.
+- Do not overstate scholarly interpretations as fact.
+- Avoid generic phrases like "this reminds us," "this encourages believers," or "we can trust" in context_text.
+- Write with depth and clarity, like a strong biblical study note for an intelligent modern reader, not a shallow summary.
+
+devotional_text rules:
+- devotional_text should be the personal, pastoral application section.
+- It may encourage, comfort, and apply the truth of the passage to the reader.
+
+User profile:
+${JSON.stringify(args.profile, null, 2)}
+
+Theme:
+${JSON.stringify(args.theme, null, 2)}
+
+Passage:
+${JSON.stringify(args.passage, null, 2)}`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: prompt }],
   });
 
-  // ← ADD THESE LINES to verify the model
-  console.log(`[OpenAI Response] Model actually used: ${response.model}`);
-  console.log(`[OpenAI Response] Response ID: ${response.id}`);
-  // Optional: log usage if available
-  // console.log(`[OpenAI Usage]`, response.usage);
-
-  const text = response.output_text?.trim();
+  const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
   if (!text) {
-    console.log("[OpenAI] No output_text received");
+    console.log('[Claude] No text content received');
     return null;
   }
 
@@ -354,7 +345,7 @@ const response = await openai.responses.create({
     const parsed = JSON.parse(stripCodeFences(text));
     return isGeneratedGuidance(parsed) ? parsed : null;
   } catch (e) {
-    console.log("[OpenAI] JSON parse failed:", e);
+    console.log('[Claude] JSON parse failed:', e);
     return null;
   }
 }
@@ -781,7 +772,7 @@ export default {
           text: selectedPassageText,
         };
 
-        let generated = await generateWithOpenAI({
+        let generated = await generateWithClaude({
           env,
           theme: selectedTheme,
           passage: selectedPassageWithText,
