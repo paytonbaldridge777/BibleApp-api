@@ -286,12 +286,21 @@ async function generateWithClaude(args: {
   theme: ThemeRow;
   passage: PassageRow;
   profile: SpiritualProfile;
+  contextFreeText?: string;
 }): Promise<GeneratedGuidance | null> {
   if (!args.env.ANTHROPIC_API_KEY) return null;
 
   const anthropic = new Anthropic({ apiKey: args.env.ANTHROPIC_API_KEY });
 
-  const prompt = `You are writing a short Christian devotional for a Bible guidance app.
+  const situationalContext = args.contextFreeText
+    ? `
+
+IMPORTANT - The user has shared something specific on their heart today. Prioritize this in your devotional, prayer, and reflection above all else:
+"${args.contextFreeText}"
+`
+    : '';
+
+  const prompt = `You are writing a short Christian devotional for a Bible guidance app.${situationalContext}
 
 Return valid JSON only with this exact shape:
 {
@@ -309,7 +318,6 @@ General rules:
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
-- Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 
 context_text rules:
 - context_text must be informational, not devotional.
@@ -650,7 +658,12 @@ export default {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
 
-        let body: { mode?: 'generate' | 'regenerate'; action?: 'generate' | 'regenerate' } = {};
+        let body: {
+          mode?: 'generate' | 'regenerate';
+          action?: 'generate' | 'regenerate';
+          theme_slug?: string;
+          free_text?: string;
+        } = {};
         try {
           body = await request.json();
         } catch {
@@ -660,6 +673,8 @@ export default {
         const requestedMode = body.mode || body.action;
         const mode = requestedMode === 'regenerate' ? 'regenerate' : 'generate';
         const guidanceDate = todayIsoDate();
+        const contextThemeSlug = typeof body.theme_slug === 'string' && body.theme_slug.trim() ? body.theme_slug.trim() : null;
+        const contextFreeText = typeof body.free_text === 'string' && body.free_text.trim() ? body.free_text.trim().slice(0, 500) : null;
 
         if (mode === 'generate') {
           const { data: existing, error: existingError } = await supabase
@@ -707,7 +722,11 @@ export default {
           );
         }
 
-        const themeSlugs = inferThemeSlugs(profile as SpiritualProfile);
+        // If user provided a situational context theme, put it first; otherwise use profile
+        const profileSlugs = inferThemeSlugs(profile as SpiritualProfile);
+        const themeSlugs = contextThemeSlug
+          ? [contextThemeSlug, ...profileSlugs.filter((s) => s !== contextThemeSlug)]
+          : profileSlugs;
 
         const { data: themes, error: themesError } = await supabase
           .from('scripture_themes')
@@ -793,6 +812,7 @@ export default {
           theme: selectedTheme,
           passage: selectedPassageWithText,
           profile: profile as SpiritualProfile,
+          contextFreeText: contextFreeText ?? undefined,
         });
 
         let generationSource: 'ai' | 'template' = 'ai';
