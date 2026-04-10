@@ -294,6 +294,7 @@ General rules:
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
+- Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 
 context_text rules:
 - context_text must be informational, not devotional.
@@ -583,7 +584,7 @@ export default {
           .from('daily_guidance')
           .select('*')
           .eq('user_id', user.id)
-          .order('guidance_date', { ascending: false })
+          .eq('guidance_date', todayIsoDate())
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
