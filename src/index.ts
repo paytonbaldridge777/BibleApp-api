@@ -318,6 +318,7 @@ General rules:
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
+- Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 
 context_text rules:
 - context_text must be informational, not devotional.
@@ -722,11 +723,28 @@ export default {
           );
         }
 
-        // If user provided a situational context theme, put it first; otherwise use profile
+        // If user provided a situational context theme chip, put it first
+        // If only free text provided, match keywords against theme slugs/names
         const profileSlugs = inferThemeSlugs(profile as SpiritualProfile);
-        const themeSlugs = contextThemeSlug
-          ? [contextThemeSlug, ...profileSlugs.filter((s) => s !== contextThemeSlug)]
-          : profileSlugs;
+        let themeSlugs = profileSlugs;
+
+        if (contextThemeSlug) {
+          themeSlugs = [contextThemeSlug, ...profileSlugs.filter((s) => s !== contextThemeSlug)];
+        } else if (contextFreeText) {
+          const lowerText = contextFreeText.toLowerCase();
+          const { data: allThemes } = await supabase
+            .from('scripture_themes')
+            .select('id, slug, name');
+          const matched = (allThemes ?? [])
+            .filter((t: any) =>
+              lowerText.includes(t.slug.replace(/_/g, ' ')) ||
+              lowerText.includes(t.name.toLowerCase())
+            )
+            .map((t: any) => t.slug);
+          if (matched.length > 0) {
+            themeSlugs = [...new Set([...matched, ...profileSlugs])];
+          }
+        }
 
         const { data: themes, error: themesError } = await supabase
           .from('scripture_themes')
