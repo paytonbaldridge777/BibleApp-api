@@ -189,7 +189,15 @@ function inferThemeSlugs(profile: SpiritualProfile): string[] {
 
   const defaults = ['peace', 'hope', 'trust', 'prayer'];
 
-  return uniq([...mapped, ...defaults]);
+  const slugs = uniq([...mapped, ...defaults]);
+
+  // Shuffle so no single theme dominates by position
+  for (let i = slugs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [slugs[i], slugs[j]] = [slugs[j], slugs[i]];
+  }
+
+  return slugs;
 }
 
 function stripCodeFences(value: string): string {
@@ -294,7 +302,6 @@ General rules:
 - Keep devotional_text to about 120-180 words.
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
-- Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 
 context_text rules:
 - context_text must be informational, not devotional.
@@ -803,6 +810,7 @@ export default {
           prayer_text: generated.prayer_text,
           reflection_question: generated.reflection_question,
           generation_source: generationSource,
+          verse_text: selectedPassageText,
         };
 
         let savedGuidance = null;
