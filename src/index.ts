@@ -22,7 +22,6 @@ function randomFromArray<T>(items: T[]): T | null {
 
 function weightedRandomPick<T extends { weight?: number | null }>(items: T[]): T | null {
   if (!items.length) return null;
-
   const normalized = items.map((item) => ({
     item,
     weight:
@@ -30,22 +29,17 @@ function weightedRandomPick<T extends { weight?: number | null }>(items: T[]): T
         ? Number(item.weight)
         : 1,
   }));
-
   const total = normalized.reduce((sum, entry) => sum + entry.weight, 0);
-
   if (total <= 0) {
     return randomFromArray(items);
   }
-
   let roll = Math.random() * total;
-
   for (const entry of normalized) {
     roll -= entry.weight;
     if (roll <= 0) {
       return entry.item;
     }
   }
-
   return normalized[normalized.length - 1]?.item ?? null;
 }
 
@@ -90,6 +84,11 @@ type GeneratedGuidance = {
   reflection_question: string;
 };
 
+type InterpretationResult = {
+  context_text: string;
+  reflection_question: string;
+};
+
 type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -118,65 +117,49 @@ function uniq<T>(items: T[]): T[] {
 
 function mapProfileValueToThemeSlug(value: string): string | null {
   const slug = normalizeSlug(value);
-
   const aliasMap: Record<string, string> = {
     peace: 'peace',
     calm: 'peace',
     stress: 'peace',
-
     anxiety: 'anxiety',
     worry: 'anxiety',
     overwhelmed: 'anxiety',
-
     hope: 'hope',
     discouragement: 'hope',
     encouragement: 'hope',
-
     fear: 'fear',
     afraid: 'fear',
     courage: 'fear',
-
     grief: 'grief',
     loss: 'grief',
     sorrow: 'grief',
-
     loneliness: 'loneliness',
     alone: 'loneliness',
-
     forgiveness: 'forgiveness',
     guilt: 'forgiveness',
     shame: 'forgiveness',
-
     wisdom: 'wisdom',
     discernment: 'wisdom',
     decisions: 'wisdom',
     decision_making: 'wisdom',
-
     purpose: 'purpose',
     calling: 'purpose',
     meaning: 'purpose',
-
     temptation: 'temptation',
     temptation_struggle: 'temptation',
-
     spiritual_growth: 'spiritual_growth',
     growth: 'spiritual_growth',
     maturity: 'spiritual_growth',
-
     addiction: 'addiction_strongholds',
     strongholds: 'addiction_strongholds',
     addiction_strongholds: 'addiction_strongholds',
-
     prayer: 'prayer',
-
     trust: 'trust',
     uncertainty: 'trust',
-
     endurance: 'endurance',
     perseverance: 'endurance',
     waiting: 'endurance',
   };
-
   return aliasMap[slug] ?? slug ?? null;
 }
 
@@ -191,7 +174,6 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 function inferThemeSlugs(profile: SpiritualProfile): string[] {
   const rawValues = [...(profile.main_struggles ?? []), ...(profile.current_needs ?? [])];
-
   const profileSlugs = uniq(
     rawValues
       .map(mapProfileValueToThemeSlug)
@@ -209,22 +191,18 @@ function inferThemeSlugs(profile: SpiritualProfile): string[] {
 
 function stripCodeFences(value: string): string {
   const trimmed = value.trim();
-
   if (trimmed.startsWith('```')) {
     return trimmed
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/, '')
       .trim();
   }
-
   return trimmed;
 }
 
 function isGeneratedGuidance(value: unknown): value is GeneratedGuidance {
   if (!value || typeof value !== 'object') return false;
-
   const obj = value as Record<string, unknown>;
-
   return (
     typeof obj.title === 'string' &&
     obj.title.trim().length > 0 &&
@@ -239,13 +217,23 @@ function isGeneratedGuidance(value: unknown): value is GeneratedGuidance {
   );
 }
 
+function isInterpretationResult(value: unknown): value is InterpretationResult {
+  if (!value || typeof value !== 'object') return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.context_text === 'string' &&
+    obj.context_text.trim().length > 0 &&
+    typeof obj.reflection_question === 'string' &&
+    obj.reflection_question.trim().length > 0
+  );
+}
+
 function buildFallbackGuidance(args: {
   theme: ThemeRow;
   passage: PassageRow;
   profile: SpiritualProfile;
 }): GeneratedGuidance {
   const { theme, passage, profile } = args;
-
   const tone = profile.tone_preference || 'gentle';
   const summary =
     passage.devotional_summary ||
@@ -253,16 +241,17 @@ function buildFallbackGuidance(args: {
 
   const title = `${theme.name}: ${passage.reference}`;
 
-const contextText = `This passage comes from ${passage.book_name} ${passage.chapter} and should be read within the flow of the surrounding section, not as an isolated quote.\n\n`
-   `In Scripture, themes like ${theme.name.toLowerCase()} are often presented not merely as private comfort, but as part of God's covenant relationship with His people and His instruction for faithful living. `
-   `Where the historical setting is not fully clear from the text alone, the safest reading is to pay close attention to the passage's literary flow, imagery, and purpose in context. `
-   `Reading the verses around ${passage.reference} helps show how this verse functions within the larger argument, prayer, or act of worship.`;
-  
+  const contextText =
+    `This passage comes from ${passage.book_name} ${passage.chapter} and should be read within the flow of the surrounding section, not as an isolated quote.\n\n` +
+    `In Scripture, themes like ${theme.name.toLowerCase()} are often presented not merely as private comfort, but as part of God's covenant relationship with His people and His instruction for faithful living. ` +
+    `Where the historical setting is not fully clear from the text alone, the safest reading is to pay close attention to the passage's literary flow, imagery, and purpose in context. ` +
+    `Reading the verses around ${passage.reference} helps show how this verse functions within the larger argument, prayer, or act of worship.`;
+
   const devotionalText =
     `${summary}\n\n` +
-    `Today’s focus is ${theme.name.toLowerCase()}. ` +
-    `As you reflect on ${passage.reference}, notice what this verse reveals about God’s character and care. ` +
-    `Rather than trying to carry everything alone, let this truth slow you down and re-center your heart in God’s presence.\n\n` +
+    `Today's focus is ${theme.name.toLowerCase()}. ` +
+    `As you reflect on ${passage.reference}, notice what this verse reveals about God's character and care. ` +
+    `Rather than trying to carry everything alone, let this truth slow you down and re-center your heart in God's presence.\n\n` +
     `Scripture: "${passage.text ?? ''}"`;
 
   const prayerText =
@@ -281,6 +270,18 @@ const contextText = `This passage comes from ${passage.book_name} ${passage.chap
   };
 }
 
+function buildFallbackInterpretation(reference: string): InterpretationResult {
+  return {
+    context_text:
+      `${reference} is part of the larger flow of Scripture and should be read within its surrounding context rather than in isolation. ` +
+      `Understanding who is speaking, who is being addressed, and what is happening in the surrounding passage helps clarify its meaning. ` +
+      `Consider reading several verses before and after this passage to understand how it fits within the author's argument or narrative. ` +
+      `If the language feels unfamiliar, it may reflect ancient cultural assumptions, poetic conventions, or covenantal imagery that modern readers can miss without some background. ` +
+      `Consulting a study Bible or commentary can add helpful depth to your reading of this passage.`,
+    reflection_question: `What questions does this passage raise for you, and what might it have meant to its original audience?`,
+  };
+}
+
 async function generateWithClaude(args: {
   env: Env;
   theme: ThemeRow;
@@ -289,12 +290,10 @@ async function generateWithClaude(args: {
   contextFreeText?: string;
 }): Promise<GeneratedGuidance | null> {
   if (!args.env.ANTHROPIC_API_KEY) return null;
-
   const anthropic = new Anthropic({ apiKey: args.env.ANTHROPIC_API_KEY });
 
   const situationalContext = args.contextFreeText
     ? `
-
 IMPORTANT - The user has shared something specific on their heart today. Prioritize this in your devotional, prayer, and reflection above all else:
 "${args.contextFreeText}"
 `
@@ -329,12 +328,7 @@ context_text rules:
 - Prioritize what the original audience, worshiping community, or first hearers would likely have understood.
 - When relevant, explain meaningful imagery, symbolism, worship language, covenant themes, or ancient assumptions that modern readers may miss.
 - Include at least one concrete insight that adds depth beyond paraphrase.
-- Prefer this order when possible:
-  1. who is speaking or writing
-  2. who is being addressed
-  3. what is happening in the surrounding passage
-  4. important cultural, covenantal, literary, or historical background that is reasonably well-established
-  5. how this verse functions in the flow of the passage
+- Prefer this order when possible: 1. who is speaking or writing 2. who is being addressed 3. what is happening in the surrounding passage 4. important cultural, covenantal, literary, or historical background that is reasonably well-established 5. how this verse functions in the flow of the passage
 - If something is uncertain or debated, say so briefly and plainly.
 - Do not invent details.
 - Do not overstate scholarly interpretations as fact.
@@ -360,7 +354,8 @@ ${JSON.stringify(args.passage, null, 2)}`;
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+  const text =
+    response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
   if (!text) {
     console.log('[Claude] No text content received');
     return null;
@@ -371,6 +366,64 @@ ${JSON.stringify(args.passage, null, 2)}`;
     return isGeneratedGuidance(parsed) ? parsed : null;
   } catch (e) {
     console.log('[Claude] JSON parse failed:', e);
+    return null;
+  }
+}
+
+async function generateInterpretationWithClaude(args: {
+  env: Env;
+  reference: string;
+  text: string;
+}): Promise<InterpretationResult | null> {
+  if (!args.env.ANTHROPIC_API_KEY) return null;
+  const anthropic = new Anthropic({ apiKey: args.env.ANTHROPIC_API_KEY });
+
+  const prompt = `You are a biblical scholar writing a study note for a Bible app. A user has requested help understanding a specific passage.
+
+Passage: ${args.reference}
+Text: "${args.text}"
+
+Return valid JSON only with this exact shape:
+{
+  "context_text": string,
+  "reflection_question": string
+}
+
+Rules:
+- Do not include markdown.
+- Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
+- Keep context_text to 150-220 words.
+- Keep reflection_question to one sentence.
+
+context_text rules:
+- Be informational and scholarly, not devotional. Do not encourage, comfort, or exhort the reader.
+- Explain who is speaking or writing, who is being addressed, and what is happening in the surrounding passage.
+- Include relevant cultural, covenantal, literary, or historical background that a modern reader would likely miss.
+- Explain any imagery, symbolism, or language that may be unclear.
+- If something is uncertain or debated among scholars, say so briefly and plainly.
+- Do not invent details or overstate interpretations as fact.
+- Avoid generic phrases like "this reminds us" or "we can trust."
+- Write like a strong biblical study note for an intelligent modern reader.
+
+reflection_question rules:
+- One substantive question that invites the reader to sit with the passage.
+- Not a yes/no question.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 600,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text =
+    response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(stripCodeFences(text));
+    return isInterpretationResult(parsed) ? parsed : null;
+  } catch (e) {
+    console.log('[Claude Interpret] JSON parse failed:', e);
     return null;
   }
 }
@@ -444,7 +497,6 @@ async function loadGuidanceRelatedData(
       .select('id, slug, name')
       .eq('id', guidance.theme_id)
       .maybeSingle();
-
     matchedTheme = themeData ?? null;
   }
 
@@ -461,15 +513,12 @@ async function loadBibleLookup(env: Env): Promise<Record<string, string>> {
   if (!bibleLookupPromise) {
     bibleLookupPromise = (async () => {
       const response = await env.ASSETS.fetch('https://assets.local/data/web-lookup.json');
-
       if (!response.ok) {
         throw new Error(`Failed to load Bible lookup asset: ${response.status}`);
       }
-
       return (await response.json()) as Record<string, string>;
     })();
   }
-
   return bibleLookupPromise;
 }
 
@@ -486,17 +535,14 @@ async function resolvePassageText(
   const book = normalizeBookKey(passage.book_name);
   const start = passage.verse_start;
   const end = passage.verse_end ?? passage.verse_start;
-
   const verses: string[] = [];
 
   for (let verse = start; verse <= end; verse++) {
     const key = `${book}|${passage.chapter}|${verse}`;
     const text = lookup[key];
-
     if (!text) {
       throw new Error(`Verse not found in Bible lookup: ${key}`);
     }
-
     verses.push(text.trim());
   }
 
@@ -507,7 +553,6 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/{2,}/g, '/');
-
     const origin = request.headers.get('Origin');
     const allowedOrigins = parseAllowedOrigins(env);
     const cors = corsHeaders(origin, allowedOrigins);
@@ -535,7 +580,6 @@ export default {
         data: { user },
         error: userErr,
       } = await supabase.auth.getUser();
-
       if (userErr || !user) {
         return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
       }
@@ -555,7 +599,6 @@ export default {
       const { error: answersErr } = await supabase
         .from('onboarding_answers')
         .upsert(answers, { onConflict: 'user_id' });
-
       if (answersErr) {
         return json({ error: answersErr.message }, { status: 400, headers: cors });
       }
@@ -580,7 +623,6 @@ export default {
       const { error: spErr } = await supabase
         .from('spiritual_profiles')
         .upsert(spiritualProfile, { onConflict: 'user_id' });
-
       if (spErr) {
         return json({ error: spErr.message }, { status: 400, headers: cors });
       }
@@ -599,7 +641,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
@@ -629,7 +670,6 @@ export default {
         }
 
         const related = await loadGuidanceRelatedData(env, supabase, guidance);
-
         return json(
           {
             guidance,
@@ -654,7 +694,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
@@ -674,8 +713,16 @@ export default {
         const requestedMode = body.mode || body.action;
         const mode = requestedMode === 'regenerate' ? 'regenerate' : 'generate';
         const guidanceDate = todayIsoDate();
-        const contextThemeSlug = typeof body.theme_slug === 'string' && body.theme_slug.trim() ? body.theme_slug.trim() : null;
-        const contextFreeText = typeof body.free_text === 'string' && body.free_text.trim() ? body.free_text.trim().slice(0, 500) : null;
+
+        const contextThemeSlug =
+          typeof body.theme_slug === 'string' && body.theme_slug.trim()
+            ? body.theme_slug.trim()
+            : null;
+
+        const contextFreeText =
+          typeof body.free_text === 'string' && body.free_text.trim()
+            ? body.free_text.trim().slice(0, 500)
+            : null;
 
         if (mode === 'generate') {
           const { data: existing, error: existingError } = await supabase
@@ -694,7 +741,6 @@ export default {
 
           if (existing) {
             const related = await loadGuidanceRelatedData(env, supabase, existing);
-
             return json(
               {
                 guidance: existing,
@@ -718,7 +764,9 @@ export default {
 
         if (!profile) {
           return json(
-            { error: 'No spiritual profile found. Please complete onboarding first.' },
+            {
+              error: 'No spiritual profile found. Please complete onboarding first.',
+            },
             { status: 400, headers: cors }
           );
         }
@@ -735,12 +783,15 @@ export default {
           const { data: allThemes } = await supabase
             .from('scripture_themes')
             .select('id, slug, name');
+
           const matched = (allThemes ?? [])
-            .filter((t: any) =>
-              lowerText.includes(t.slug.replace(/_/g, ' ')) ||
-              lowerText.includes(t.name.toLowerCase())
+            .filter(
+              (t: any) =>
+                lowerText.includes(t.slug.replace(/_/g, ' ')) ||
+                lowerText.includes(t.name.toLowerCase())
             )
             .map((t: any) => t.slug);
+
           if (matched.length > 0) {
             themeSlugs = [...new Set([...matched, ...profileSlugs])];
           }
@@ -770,16 +821,8 @@ export default {
               weight,
               passage_id,
               scripture_passages (
-                id,
-                reference,
-                book_name,
-                chapter,
-                verse_start,
-                verse_end,
-                devotional_summary,
-                caution_notes,
-                translation,
-                testament
+                id, reference, book_name, chapter, verse_start, verse_end,
+                devotional_summary, caution_notes, translation, testament
               )
             `)
             .eq('theme_id', theme.id)
@@ -794,7 +837,6 @@ export default {
             .map((m: any) => {
               const passage = m.scripture_passages;
               if (!passage) return null;
-
               return {
                 ...passage,
                 weight: Number(m.weight ?? 1),
@@ -834,14 +876,12 @@ export default {
         });
 
         let generationSource: 'ai' | 'template' = 'ai';
-
         if (!generated) {
           generated = buildFallbackGuidance({
             theme: selectedTheme,
             passage: selectedPassageWithText,
             profile: profile as SpiritualProfile,
           });
-
           generationSource = 'template';
         }
 
@@ -871,7 +911,6 @@ export default {
             })
             .select('*')
             .single();
-
           savedGuidance = data;
           saveError = error;
         } else {
@@ -880,7 +919,6 @@ export default {
             .insert(insertPayload)
             .select('*')
             .single();
-
           savedGuidance = data;
           saveError = error;
         }
@@ -911,7 +949,94 @@ export default {
         );
       } catch (error: any) {
         return json(
-          { error: 'Unexpected error generating guidance', details: error?.message ?? String(error) },
+          {
+            error: 'Unexpected error generating guidance',
+            details: error?.message ?? String(error),
+          },
+          { status: 500, headers: cors }
+        );
+      }
+    }
+
+    if (request.method === 'POST' && path === '/interpret') {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError || !user) {
+          return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+        }
+
+        let body: { book?: string; chapter?: number; verse_start?: number; verse_end?: number } = {};
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: 'Invalid JSON body' }, { status: 400, headers: cors });
+        }
+
+        const { book, chapter, verse_start, verse_end } = body;
+
+        if (!book || !chapter || !verse_start) {
+          return json(
+            { error: 'book, chapter, and verse_start are required' },
+            { status: 400, headers: cors }
+          );
+        }
+
+        const end = verse_end ?? verse_start;
+        const verseCount = end - verse_start + 1;
+
+        if (verseCount > 12) {
+          return json(
+            { error: 'Please select 12 verses or fewer' },
+            { status: 400, headers: cors }
+          );
+        }
+
+        if (end < verse_start) {
+          return json(
+            { error: 'verse_end must be greater than or equal to verse_start' },
+            { status: 400, headers: cors }
+          );
+        }
+
+        const passageText = await resolvePassageText(env, {
+          book_name: book,
+          chapter,
+          verse_start,
+          verse_end: end !== verse_start ? end : null,
+        });
+
+        const reference =
+          end !== verse_start
+            ? `${book} ${chapter}:${verse_start}-${end}`
+            : `${book} ${chapter}:${verse_start}`;
+
+        let result = await generateInterpretationWithClaude({
+          env,
+          reference,
+          text: passageText,
+        });
+
+        if (!result) {
+          result = buildFallbackInterpretation(reference);
+        }
+
+        return json(
+          {
+            reference,
+            text: passageText,
+            context_text: result.context_text,
+            reflection_question: result.reflection_question,
+          },
+          { headers: cors }
+        );
+      } catch (err) {
+        return json(
+          {
+            error: err instanceof Error ? err.message : 'Failed to interpret passage',
+          },
           { status: 500, headers: cors }
         );
       }
@@ -923,7 +1048,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
@@ -936,7 +1060,6 @@ export default {
         if (!guidanceId) {
           return json({ error: 'guidance_id is required' }, { status: 400, headers: cors });
         }
-
         if (typeof helpful !== 'boolean') {
           return json({ error: 'helpful must be true or false' }, { status: 400, headers: cors });
         }
@@ -976,7 +1099,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
@@ -995,10 +1117,7 @@ export default {
               user_id: user.id,
               guidance_id: guidanceId,
             },
-            {
-              onConflict: 'user_id,guidance_id',
-              ignoreDuplicates: true,
-            }
+            { onConflict: 'user_id,guidance_id', ignoreDuplicates: true }
           )
           .select('*')
           .maybeSingle();
@@ -1030,7 +1149,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
@@ -1042,18 +1160,9 @@ export default {
             created_at,
             guidance_id,
             daily_guidance (
-              id,
-              user_id,
-              theme_id,
-              passage_id,
-              guidance_date,
-              title,
-              context_text,
-              devotional_text,
-              prayer_text,
-              reflection_question,
-              generation_source,
-              created_at
+              id, user_id, theme_id, passage_id, guidance_date,
+              title, context_text, devotional_text, prayer_text,
+              reflection_question, generation_source, created_at
             )
           `)
           .eq('user_id', user.id)
@@ -1067,7 +1176,6 @@ export default {
         }
 
         const guidanceRows = (favorites ?? []).map((f: any) => f.daily_guidance).filter(Boolean);
-
         const passageIds = [...new Set(guidanceRows.map((g: any) => g.passage_id).filter(Boolean))];
         const themeIds = [...new Set(guidanceRows.map((g: any) => g.theme_id).filter(Boolean))];
 
@@ -1086,7 +1194,6 @@ export default {
               return [p.id, { ...p, text }];
             })
           );
-
           passagesById = Object.fromEntries(enrichedPassages);
         }
 
@@ -1095,7 +1202,6 @@ export default {
             .from('scripture_themes')
             .select('id, slug, name')
             .in('id', themeIds);
-
           themesById = Object.fromEntries((themes ?? []).map((t: any) => [t.id, t]));
         }
 
@@ -1103,7 +1209,6 @@ export default {
           const guidance = f.daily_guidance;
           const passage = guidance?.passage_id ? passagesById[guidance.passage_id] ?? null : null;
           const matchedTheme = guidance?.theme_id ? themesById[guidance.theme_id] ?? null : null;
-
           return {
             id: f.id,
             created_at: f.created_at,
@@ -1130,7 +1235,6 @@ export default {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-
         if (userError || !user) {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
