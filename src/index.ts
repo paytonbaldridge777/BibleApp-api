@@ -505,8 +505,13 @@ async function loadGuidanceRelatedData(
 
 let bibleLookupPromise: Promise<Record<string, string>> | null = null;
 
+const BOOK_KEY_ALIASES: Record<string, string> = {
+  psalms: 'psalm',
+};
+
 function normalizeBookKey(value: string): string {
-  return value.toLowerCase().trim().replace(/\s+/g, '_');
+  const key = value.toLowerCase().trim().replace(/\s+/g, '_');
+  return BOOK_KEY_ALIASES[key] ?? key;
 }
 
 async function loadBibleLookup(env: Env): Promise<Record<string, string>> {
