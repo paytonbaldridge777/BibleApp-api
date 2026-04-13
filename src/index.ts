@@ -86,7 +86,7 @@ type GeneratedGuidance = {
 
 type InterpretationResult = {
   context_text: string;
-  reflection_question: string;
+  application: string;
 };
 
 type Env = {
@@ -223,8 +223,8 @@ function isInterpretationResult(value: unknown): value is InterpretationResult {
   return (
     typeof obj.context_text === 'string' &&
     obj.context_text.trim().length > 0 &&
-    typeof obj.reflection_question === 'string' &&
-    obj.reflection_question.trim().length > 0
+    typeof obj.application === 'string' &&
+    obj.application.trim().length > 0
   );
 }
 
@@ -278,7 +278,8 @@ function buildFallbackInterpretation(reference: string): InterpretationResult {
       `Consider reading several verses before and after this passage to understand how it fits within the author's argument or narrative. ` +
       `If the language feels unfamiliar, it may reflect ancient cultural assumptions, poetic conventions, or covenantal imagery that modern readers can miss without some background. ` +
       `Consulting a study Bible or commentary can add helpful depth to your reading of this passage.`,
-    reflection_question: `What questions does this passage raise for you, and what might it have meant to its original audience?`,
+    application: `This passage speaks to the universal human experience of seeking meaning, direction, and connection with God in the midst of real life. Scripture consistently meets people in the full range of human circumstance — doubt, grief, gratitude, hope, and everything in between — and passages like this one remind readers that faith is lived in concrete moments, not in the abstract. Whatever this text calls for — trust, perseverance, honest lament, or quiet worship — it extends an invitation to bring your whole self to God. Reading slowly, and returning to a passage more than once, often reveals layers that a first reading misses.`,
+    
   };
 }
 
@@ -386,7 +387,7 @@ Text: "${args.text}"
 Return valid JSON only with this exact shape:
 {
   "context_text": string,
-  "reflection_question": string
+  "application": string
 }
 
 Rules:
@@ -405,9 +406,13 @@ context_text rules:
 - Avoid generic phrases like "this reminds us" or "we can trust."
 - Write like a strong biblical study note for an intelligent modern reader.
 
-reflection_question rules:
-- One substantive question that invites the reader to sit with the passage.
-- Not a yes/no question.`;
+application rules:
+- Write a generalized, non-personalized paragraph of 80–120 words.
+- This is not a question. It is a brief, pastoral reflection on how this passage speaks to human experience in general.
+- Do not tailor it to any specific user's struggles or profile.
+- It should feel like a thoughtful study Bible note — honest, grounded, and accessible to any reader.
+- Do not use phrases like "you should" or "you need to." Prefer "this passage invites," "readers are reminded," or similar.
+- Do not repeat the context_text. Application should go beyond historical background into meaning and significance.
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -1033,7 +1038,7 @@ export default {
             reference,
             text: passageText,
             context_text: result.context_text,
-            reflection_question: result.reflection_question,
+            application: result.application,
           },
           { headers: cors }
         );
