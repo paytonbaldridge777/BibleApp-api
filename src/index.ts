@@ -412,7 +412,7 @@ application rules:
 - Do not tailor it to any specific user's struggles or profile.
 - It should feel like a thoughtful study Bible note — honest, grounded, and accessible to any reader.
 - Do not use phrases like "you should" or "you need to." Prefer "this passage invites," "readers are reminded," or similar.
-- Do not repeat the context_text. Application should go beyond historical background into meaning and significance.
+- Do not repeat the context_text. Application should go beyond historical background into meaning and significance.`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
