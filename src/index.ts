@@ -488,7 +488,12 @@ async function loadGuidanceRelatedData(
       .maybeSingle();
 
     if (passageData) {
-      const text = await resolvePassageText(env, passageData);
+      let text: string;
+      try {
+        text = await resolvePassageText(env, passageData);
+      } catch {
+        text = (guidance as any).verse_text ?? '';
+      }
       passage = {
         ...passageData,
         text,
