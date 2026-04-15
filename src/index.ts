@@ -339,6 +339,11 @@ context_text rules:
 devotional_text rules:
 - devotional_text should be the personal, pastoral application section.
 - It may encourage, comfort, and apply the truth of the passage to the reader.
+- When the user has shared something specific on their heart, identify and name a concrete biblical concept, 
+  word, or principle from the passage that speaks directly to their situation. Name it explicitly early in 
+  the devotional (e.g. "The Hebrew word selah...", "The biblical concept of kairos...", "What Scripture 
+  calls 'stedfast love'..."). Then build the application from that named anchor rather than from the 
+  passage narrative alone.
 
 User profile:
 ${JSON.stringify(args.profile, null, 2)}
