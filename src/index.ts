@@ -189,6 +189,41 @@ function inferThemeSlugs(profile: SpiritualProfile): string[] {
   return [...shuffleArray(profileSlugs), ...shuffleArray(fallbackSlugs)];
 }
 
+async function resolveConceptSlug(
+  apiKey: string,
+  contextFreeText: string,
+  availableSlugs: string[]
+): Promise<string | null> {
+  try {
+    const anthropic = new Anthropic({ apiKey });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 100,
+      messages: [
+        {
+          role: 'user',
+          content: `A user of a Bible devotional app has shared the following on their heart today:
+"${contextFreeText}"
+
+From the list of available scripture themes below, return ONLY the single slug that would produce the most spiritually relevant and directly helpful passage for this person's specific situation. Think carefully about the core biblical concept that would genuinely address what they described — not just keyword matching.
+
+Available slugs:
+${availableSlugs.join('\n')}
+
+Respond with only the slug, nothing else. If none are a meaningful fit, respond with null.`,
+        },
+      ],
+    });
+
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+    if (!raw || raw === 'null') return null;
+    const slug = raw.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    return availableSlugs.includes(slug) ? slug : null;
+  } catch {
+    return null;
+  }
+}
+
 function stripCodeFences(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith('```')) {
@@ -792,28 +827,25 @@ export default {
         }
 
         // If user provided a situational context theme chip, put it first
-        // If only free text provided, match keywords against theme slugs/names
+        // If only free text provided, use Claude to identify the most relevant theme slug
         const profileSlugs = inferThemeSlugs(profile as SpiritualProfile);
         let themeSlugs = profileSlugs;
 
         if (contextThemeSlug) {
           themeSlugs = [contextThemeSlug, ...profileSlugs.filter((s) => s !== contextThemeSlug)];
         } else if (contextFreeText) {
-          const lowerText = contextFreeText.toLowerCase();
           const { data: allThemes } = await supabase
             .from('scripture_themes')
             .select('id, slug, name');
 
-          const matched = (allThemes ?? [])
-            .filter(
-              (t: any) =>
-                lowerText.includes(t.slug.replace(/_/g, ' ')) ||
-                lowerText.includes(t.name.toLowerCase())
-            )
-            .map((t: any) => t.slug);
+          const availableSlugs = (allThemes ?? []).map((t: any) => t.slug);
 
-          if (matched.length > 0) {
-            themeSlugs = [...new Set([...matched, ...profileSlugs])];
+          const conceptSlug = env.ANTHROPIC_API_KEY
+            ? await resolveConceptSlug(env.ANTHROPIC_API_KEY, contextFreeText, availableSlugs)
+            : null;
+
+          if (conceptSlug) {
+            themeSlugs = [conceptSlug, ...profileSlugs.filter((s) => s !== conceptSlug)];
           }
         }
 
