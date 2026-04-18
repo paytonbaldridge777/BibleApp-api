@@ -502,6 +502,44 @@ devotional_text rules:
   calls 'stedfast love'..."). Then build the application from that named anchor rather than from the 
   passage narrative alone.
 
+Tone and style rules (based on user's tone_preference: "${args.profile.tone_preference ?? 'gentle'}"):
+${(() => {
+  switch (args.profile.tone_preference) {
+    case 'direct':
+      return '- Write with clarity and confidence. Be direct and straightforward. Avoid overly soft or hedging language. The reader wants truth delivered plainly.';
+    case 'uplifting':
+      return '- Write with warmth and energy. Emphasize hope, encouragement, and the goodness of God. The reader wants to be lifted and motivated.';
+    case 'reflective':
+      return '- Write with quiet depth. Invite the reader to slow down, sit with the text, and listen inwardly. Prefer meditative phrasing over action-oriented language.';
+    default: // gentle
+      return '- Write with gentleness and compassion. The reader may be carrying something heavy. Prioritize warmth, care, and pastoral sensitivity.';
+  }
+})()}
+
+Experience level rules (based on user's bible_experience_level: "${args.profile.bible_experience_level ?? 'beginner'}"):
+${(() => {
+  switch (args.profile.bible_experience_level) {
+    case 'advanced':
+      return '- The reader studies regularly. You may use theological terms (e.g. covenant, propitiation, sanctification) without defining them. Engage with the text at depth. Do not over-explain basics.';
+    case 'intermediate':
+      return '- The reader knows the basics. Briefly explain any theological terms you use. Balance depth with accessibility.';
+    default: // beginner
+      return '- The reader is new or returning to the Bible. Avoid unexplained jargon. Define any theological or biblical terms you use. Keep language clear and accessible.';
+  }
+})()}
+
+Content type rules (based on user's preferred_content_types: ${JSON.stringify(args.profile.preferred_content_types ?? [])}):
+${(() => {
+  const types = args.profile.preferred_content_types ?? [];
+  const rules: string[] = [];
+  if (types.includes('study-explanations')) rules.push('- This reader values deeper study. Lean into the scholarly dimension of context_text and name specific biblical concepts explicitly in the devotional.');
+  if (types.includes('prayers')) rules.push('- This reader values written prayers. Make the prayer_text especially personal, specific, and heartfelt — not generic.');
+  if (types.includes('daily-encouragement')) rules.push('- This reader seeks daily encouragement. Ensure the devotional closes on a note of genuine hope or strength, grounded in the passage.');
+  if (types.includes('short-verses')) rules.push('- This reader prefers focused, verse-centered content. Keep the devotional anchored tightly to the specific passage rather than ranging broadly.');
+  if (types.includes('devotionals')) rules.push('- This reader values devotional reflection. Prioritize the personal, pastoral application in devotional_text.');
+  return rules.length > 0 ? rules.join('\n') : '- No specific content type preference. Use balanced defaults.';
+})()}
+
 User profile:
 ${JSON.stringify(args.profile, null, 2)}
 
