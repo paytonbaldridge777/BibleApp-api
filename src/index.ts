@@ -798,7 +798,7 @@ export default {
 
       await supabase
         .from('profiles')
-        .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+        .update({ onboarding_completed: true, display_name: body.display_name?.trim() || null, updated_at: new Date().toISOString() })
         .eq('id', user.id);
 
       return json({ ok: true }, { headers: cors });
