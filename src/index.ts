@@ -449,6 +449,14 @@ IMPORTANT - The user has shared something specific on their heart today. Priorit
     ? `\n${args.holidayContext.prompt}\n`
     : '';
 
+  const devotionalLengthRule = (() => {
+    switch (args.profile.devotional_length) {
+      case 'very-short': return '- Keep devotional_text to about 40-60 words. Be concise — a single focused thought.';
+      case 'medium':     return '- Keep devotional_text to about 200-280 words. Be thorough and reflective.';
+      default:           return '- Keep devotional_text to about 120-180 words.'; // 'short' or unset
+    }
+  })();
+
   const prompt = `You are writing a short Christian devotional for a Bible guidance app.${situationalContext}${holidayNote}
 
 Return valid JSON only with this exact shape:
@@ -464,7 +472,7 @@ General rules:
 - Be biblically grounded and pastoral in the devotional, prayer, and reflection.
 - Do not include markdown.
 - Keep context_text to about 110-170 words.
-- Keep devotional_text to about 120-180 words.
+${devotionalLengthRule}
 - Keep prayer_text to 40-80 words.
 - Keep reflection_question to one sentence.
 - Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
