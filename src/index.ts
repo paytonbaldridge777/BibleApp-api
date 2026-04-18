@@ -101,6 +101,115 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+type HolidayContext = {
+  name: string;
+  prompt: string;
+};
+
+function getHolidayContext(): HolidayContext | null {
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-based
+  const day = now.getDate();
+
+  // Helper: days until a target date (negative if past)
+  function daysUntil(targetMonth: number, targetDay: number): number {
+    const target = new Date(now.getFullYear(), targetMonth - 1, targetDay);
+    const today = new Date(now.getFullYear(), month - 1, day);
+    return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  // New Year: Dec 31 and Jan 1
+  if ((month === 12 && day === 31) || (month === 1 && day === 1)) {
+    return {
+      name: 'New Year',
+      prompt:
+        'Note: This devotional falls at the turn of the new year. Where the passage allows, let themes of renewal, God\'s faithfulness across seasons, and new beginnings naturally inform the devotional\'s framing. Do not force it if the passage does not support it.',
+    };
+  }
+
+  // Advent / Christmas: Dec 1-25
+  if (month === 12 && day >= 1 && day <= 25) {
+    const isChristmasDay = day === 25;
+    return {
+      name: isChristmasDay ? 'Christmas' : 'Advent',
+      prompt: isChristmasDay
+        ? 'Note: Today is Christmas Day. Where the passage allows, let the reality of the Incarnation, God entering human experience in the person of Jesus, shape the devotional\'s framing. Do not force it if the passage does not support it.'
+        : `Note: This devotional falls during Advent, the ${26 - day} days leading up to Christmas. Where the passage allows, let themes of waiting, anticipation, hope, and the coming of Christ naturally inform the devotional\'s framing. Do not force it if the passage does not support it.`,
+    };
+  }
+
+  // Thanksgiving: the 4th Thursday of November (US)
+  if (month === 11) {
+    let thursdays = 0;
+    let thanksgivingDay = 0;
+    for (let d = 1; d <= 30; d++) {
+      if (new Date(now.getFullYear(), 10, d).getDay() === 4) {
+        thursdays++;
+        if (thursdays === 4) { thanksgivingDay = d; break; }
+      }
+    }
+    if (thanksgivingDay > 0 && day >= thanksgivingDay - 6 && day <= thanksgivingDay) {
+      const isThanksgivingDay = day === thanksgivingDay;
+      return {
+        name: 'Thanksgiving',
+        prompt: isThanksgivingDay
+          ? 'Note: Today is Thanksgiving. Where the passage allows, let themes of gratitude, God\'s provision, and giving thanks in all circumstances naturally shape the devotional\'s framing. Do not force it if the passage does not support it.'
+          : 'Note: This devotional falls in the week leading up to Thanksgiving. Where the passage allows, let themes of gratitude and recognizing God\'s faithfulness and provision naturally inform the devotional\'s framing. Do not force it if the passage does not support it.',
+      };
+    }
+  }
+
+  // Easter: calculated via anonymous Gregorian algorithm
+  // Easter falls between March 22 and April 25
+  const year = now.getFullYear();
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d2 = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d2 - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const easterMonth = Math.floor((h + l - 7 * m + 114) / 31);
+  const easterDay = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(year, easterMonth - 1, easterDay);
+
+  const daysToEaster = daysUntil(easterMonth, easterDay);
+  // Good Friday is 2 days before Easter
+  const goodFridayDate = new Date(easter);
+  goodFridayDate.setDate(easter.getDate() - 2);
+  const isGoodFriday = month === goodFridayDate.getMonth() + 1 && day === goodFridayDate.getDate();
+  // Palm Sunday is 7 days before Easter
+  // Window: Palm Sunday through Easter Sunday (Holy Week, ~10 days before)
+  if (daysToEaster >= 0 && daysToEaster <= 10) {
+    if (daysToEaster === 0) {
+      return {
+        name: 'Easter',
+        prompt:
+          'Note: Today is Easter Sunday. Where the passage allows, let the reality of the Resurrection, Christ risen and victorious over death, shape the devotional\'s framing. Do not force it if the passage does not support it.',
+      };
+    }
+    if (isGoodFriday) {
+      return {
+        name: 'Good Friday',
+        prompt:
+          'Note: Today is Good Friday. Where the passage allows, let themes of sacrifice, suffering, and the cost of redemption naturally inform the devotional\'s framing. Do not force it if the passage does not support it.',
+      };
+    }
+    return {
+      name: 'Holy Week',
+      prompt:
+        `Note: This devotional falls during Holy Week, ${daysToEaster} day${daysToEaster === 1 ? '' : 's'} before Easter. Where the passage allows, let themes of Christ\'s final days, sacrifice, and the hope of resurrection naturally inform the devotional\'s framing. Do not force it if the passage does not support it.`,
+    };
+  }
+
+  return null;
+}
+
 function normalizeSlug(value: string): string {
   return value
     .toLowerCase()
@@ -324,6 +433,7 @@ async function generateWithClaude(args: {
   passage: PassageRow;
   profile: SpiritualProfile;
   contextFreeText?: string;
+  holidayContext?: HolidayContext | null;
 }): Promise<GeneratedGuidance | null> {
   if (!args.env.ANTHROPIC_API_KEY) return null;
   const anthropic = new Anthropic({ apiKey: args.env.ANTHROPIC_API_KEY });
@@ -335,7 +445,11 @@ IMPORTANT - The user has shared something specific on their heart today. Priorit
 `
     : '';
 
-  const prompt = `You are writing a short Christian devotional for a Bible guidance app.${situationalContext}
+  const holidayNote = !args.contextFreeText && args.holidayContext
+    ? `\n${args.holidayContext.prompt}\n`
+    : '';
+
+  const prompt = `You are writing a short Christian devotional for a Bible guidance app.${situationalContext}${holidayNote}
 
 Return valid JSON only with this exact shape:
 {
@@ -919,12 +1033,15 @@ export default {
           text: selectedPassageText,
         };
 
+        const holidayContext = getHolidayContext();
+
         let generated = await generateWithClaude({
           env,
           theme: selectedTheme,
           passage: selectedPassageWithText,
           profile: profile as SpiritualProfile,
           contextFreeText: contextFreeText ?? undefined,
+          holidayContext,
         });
 
         let generationSource: 'ai' | 'template' = 'ai';
