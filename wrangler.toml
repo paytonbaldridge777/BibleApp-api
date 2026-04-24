@@ -9,3 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./public"
 binding = "ASSETS"
 run_worker_first = true
+
+[[r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "shepherd-audio"
