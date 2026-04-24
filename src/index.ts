@@ -96,6 +96,7 @@ type Env = {
   OPENAI_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
+  AUDIO_BUCKET?: R2Bucket;
 };
 
 function todayIsoDate() {
@@ -765,6 +766,62 @@ async function resolvePassageText(
   return verses.join(' ');
 }
 
+
+// ---------------------------------------------------------------------------
+// TTS helpers
+// ---------------------------------------------------------------------------
+
+function buildTTSText(args: {
+  passageReference: string;
+  passageText: string;
+  contextText: string | null;
+  devotionalText: string | null;
+  prayerText: string | null;
+  reflectionQuestion: string | null;
+}): string {
+  const parts: string[] = [];
+  parts.push(`Today's verse. ${args.passageReference}. ${args.passageText}`);
+  if (args.contextText) parts.push(`Biblical Context. ${args.contextText}`);
+  if (args.devotionalText) parts.push(`Devotional. ${args.devotionalText}`);
+  if (args.prayerText) parts.push(`Prayer. ${args.prayerText}`);
+  if (args.reflectionQuestion) parts.push(`Reflection. ${args.reflectionQuestion}`);
+  return parts.join('\n\n');
+}
+
+async function generateAndStoreAudio(args: {
+  env: Env;
+  guidanceId: string;
+  text: string;
+}): Promise<void> {
+  if (!args.env.OPENAI_API_KEY || !args.env.AUDIO_BUCKET) return;
+  try {
+    const truncated = args.text.slice(0, 4096);
+    const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${args.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'tts-1-hd',
+        voice: 'onyx',
+        input: truncated,
+        response_format: 'mp3',
+      }),
+    });
+    if (!openaiRes.ok) {
+      console.error('[TTS] OpenAI error:', await openaiRes.text());
+      return;
+    }
+    const audioBuffer = await openaiRes.arrayBuffer();
+    await args.env.AUDIO_BUCKET.put(`guidance/${args.guidanceId}.mp3`, audioBuffer, {
+      httpMetadata: { contentType: 'audio/mpeg' },
+    });
+  } catch (err) {
+    console.error('[TTS] Failed to generate/store audio:', err);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -1146,6 +1203,20 @@ export default {
           );
         }
 
+        // Fire-and-forget: generate and store audio in R2
+        if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
+          const ttsText = buildTTSText({
+            passageReference: selectedPassage.reference,
+            passageText: selectedPassageText,
+            contextText: generated.context_text,
+            devotionalText: generated.devotional_text,
+            prayerText: generated.prayer_text,
+            reflectionQuestion: generated.reflection_question,
+          });
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          generateAndStoreAudio({ env, guidanceId: savedGuidance.id, text: ttsText });
+        }
+
         return json(
           {
             guidance: savedGuidance,
@@ -1486,7 +1557,9 @@ export default {
       }
     }
 
-    if (request.method === 'POST' && path === '/tts') {
+    // GET /tts/:guidanceId -- serve stored audio from R2, generate on-the-fly as fallback
+    const ttsMatch = path.match(/^\/tts\/([a-zA-Z0-9_-]+)$/);
+    if (request.method === 'GET' && ttsMatch) {
       try {
         const {
           data: { user },
@@ -1496,23 +1569,60 @@ export default {
           return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
         }
 
+        const guidanceId = ttsMatch[1];
+
+        // Try R2 first
+        if (env.AUDIO_BUCKET) {
+          const stored = await env.AUDIO_BUCKET.get(`guidance/${guidanceId}.mp3`);
+          if (stored) {
+            const audioHeaders = new Headers(cors);
+            audioHeaders.set('Content-Type', 'audio/mpeg');
+            audioHeaders.set('Cache-Control', 'private, max-age=86400');
+            return new Response(stored.body, { status: 200, headers: audioHeaders });
+          }
+        }
+
+        // Fallback: generate on-the-fly from guidance record
         if (!env.OPENAI_API_KEY) {
           return json({ error: 'TTS not configured' }, { status: 503, headers: cors });
         }
 
-        let body: { text?: string } = {};
-        try {
-          body = await request.json();
-        } catch {
-          return json({ error: 'Invalid JSON body' }, { status: 400, headers: cors });
+        const { data: guidance } = await supabase
+          .from('daily_guidance')
+          .select('id, passage_id, context_text, devotional_text, prayer_text, reflection_question, verse_text')
+          .eq('id', guidanceId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!guidance) {
+          return json({ error: 'Guidance not found' }, { status: 404, headers: cors });
         }
 
-        const text = typeof body.text === 'string' ? body.text.trim() : '';
-        if (!text) {
-          return json({ error: 'text is required' }, { status: 400, headers: cors });
+        let passageReference = '';
+        let passageText = guidance.verse_text ?? '';
+
+        if (guidance.passage_id) {
+          const { data: passage } = await supabase
+            .from('scripture_passages')
+            .select('reference, book_name, chapter, verse_start, verse_end')
+            .eq('id', guidance.passage_id)
+            .maybeSingle();
+          if (passage) {
+            passageReference = passage.reference;
+            if (!passageText) {
+              try { passageText = await resolvePassageText(env, passage); } catch { passageText = ''; }
+            }
+          }
         }
 
-        const truncated = text.slice(0, 4096);
+        const ttsText = buildTTSText({
+          passageReference,
+          passageText,
+          contextText: guidance.context_text,
+          devotionalText: guidance.devotional_text,
+          prayerText: guidance.prayer_text,
+          reflectionQuestion: guidance.reflection_question,
+        });
 
         const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
           method: 'POST',
@@ -1522,22 +1632,30 @@ export default {
           },
           body: JSON.stringify({
             model: 'tts-1-hd',
-            voice: 'nova',
-            input: truncated,
+            voice: 'onyx',
+            input: ttsText.slice(0, 4096),
             response_format: 'mp3',
           }),
         });
 
         if (!openaiRes.ok) {
-          const errText = await openaiRes.text();
-          console.error('[TTS] OpenAI error:', errText);
+          console.error('[TTS] OpenAI fallback error:', await openaiRes.text());
           return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
         }
 
         const audioBuffer = await openaiRes.arrayBuffer();
+
+        // Store in R2 for next time
+        if (env.AUDIO_BUCKET) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          env.AUDIO_BUCKET.put(`guidance/${guidanceId}.mp3`, audioBuffer.slice(0), {
+            httpMetadata: { contentType: 'audio/mpeg' },
+          });
+        }
+
         const audioHeaders = new Headers(cors);
         audioHeaders.set('Content-Type', 'audio/mpeg');
-        audioHeaders.set('Cache-Control', 'private, max-age=3600');
+        audioHeaders.set('Cache-Control', 'private, max-age=86400');
         return new Response(audioBuffer, { status: 200, headers: audioHeaders });
       } catch (err) {
         return json(
