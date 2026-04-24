@@ -822,13 +822,7 @@ ${args.reflectionQuestion} [sigh]`
     : '';
 
   const allParts = [verse, context, devotional, prayer, reflection].filter(Boolean);
-  const all = `[calm] [breathe]
-
-` + allParts.join('
-
-[breathe]
-
-');
+  const all = '[calm] [breathe]\n\n' + allParts.join('\n\n[breathe]\n\n');
 
   return { all, verse, context, devotional, prayer, reflection };
 }
