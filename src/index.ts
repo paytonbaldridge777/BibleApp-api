@@ -781,48 +781,27 @@ function buildSectionTexts(args: {
   prayerText: string | null;
   reflectionQuestion: string | null;
 }): Record<TTSSection, string> {
-  // Inworld audio markups used throughout for devotional delivery:
-  // [calm] = gentle, settled tone   [reverent] = hushed respect
-  // [sigh] = natural breath pause   [breathe] = soft inhale between thoughts
-  // [thoughtful] = slower, reflective pacing
-
   const verse =
-    `[calm] Here is today's verse. [breathe]
-
-` +
-    `${args.passageReference}.
-
-` +
-    `${args.passageText}`;
+    `Here is today's verse.\n\n${args.passageReference}.\n\n${args.passageText}`;
 
   const context = args.contextText
-    ? `[thoughtful] Some biblical context. [breathe]
-
-${args.contextText}`
+    ? `Some biblical context.\n\n${args.contextText}`
     : '';
 
   const devotional = args.devotionalText
-    ? `[calm] Today's devotional. [breathe]
-
-${args.devotionalText}
-
-[sigh]`
+    ? `Today's devotional.\n\n${args.devotionalText}`
     : '';
 
   const prayer = args.prayerText
-    ? `[reverent] Let us pray. [breathe]
-
-${args.prayerText}`
+    ? `Let us pray.\n\n${args.prayerText}`
     : '';
 
   const reflection = args.reflectionQuestion
-    ? `[thoughtful] A moment for reflection. [breathe]
-
-${args.reflectionQuestion} [sigh]`
+    ? `A moment for reflection.\n\n${args.reflectionQuestion}`
     : '';
 
   const allParts = [verse, context, devotional, prayer, reflection].filter(Boolean);
-  const all = '[calm] [breathe]\n\n' + allParts.join('\n\n[breathe]\n\n');
+  const all = allParts.join('\n\n');
 
   return { all, verse, context, devotional, prayer, reflection };
 }
