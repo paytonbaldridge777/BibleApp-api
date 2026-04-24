@@ -93,7 +93,7 @@ type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
+  INWORLD_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
   AUDIO_BUCKET?: R2Bucket;
@@ -773,9 +773,6 @@ async function resolvePassageText(
 
 type TTSSection = 'all' | 'verse' | 'context' | 'devotional' | 'prayer' | 'reflection';
 
-const TTS_INSTRUCTION =
-  'Speak slowly and warmly, with natural pauses between sentences, as a pastor delivering a morning devotional. Let each thought breathe. Do not rush.';
-
 function buildSectionTexts(args: {
   passageReference: string;
   passageText: string;
@@ -784,50 +781,96 @@ function buildSectionTexts(args: {
   prayerText: string | null;
   reflectionQuestion: string | null;
 }): Record<TTSSection, string> {
-  const verse = `Here is today\'s verse.\n\n${args.passageReference}.\n\n${args.passageText}`;
+  // Inworld audio markups used throughout for devotional delivery:
+  // [calm] = gentle, settled tone   [reverent] = hushed respect
+  // [sigh] = natural breath pause   [breathe] = soft inhale between thoughts
+  // [thoughtful] = slower, reflective pacing
+
+  const verse =
+    `[calm] Here is today's verse. [breathe]
+
+` +
+    `${args.passageReference}.
+
+` +
+    `${args.passageText}`;
+
   const context = args.contextText
-    ? `Some biblical context.\n\n${args.contextText}`
+    ? `[thoughtful] Some biblical context. [breathe]
+
+${args.contextText}`
     : '';
+
   const devotional = args.devotionalText
-    ? `Today\'s devotional.\n\n${args.devotionalText}`
+    ? `[calm] Today's devotional. [breathe]
+
+${args.devotionalText}
+
+[sigh]`
     : '';
+
   const prayer = args.prayerText
-    ? `Let us pray.\n\n${args.prayerText}`
+    ? `[reverent] Let us pray. [breathe]
+
+${args.prayerText}`
     : '';
+
   const reflection = args.reflectionQuestion
-    ? `A moment for reflection.\n\n${args.reflectionQuestion}`
+    ? `[thoughtful] A moment for reflection. [breathe]
+
+${args.reflectionQuestion} [sigh]`
     : '';
 
   const allParts = [verse, context, devotional, prayer, reflection].filter(Boolean);
-  const all = allParts.join('\n\n');
+  const all = `[calm] [breathe]
+
+` + allParts.join('
+
+[breathe]
+
+');
 
   return { all, verse, context, devotional, prayer, reflection };
 }
 
-async function callOpenAITTS(args: {
+async function callInworldTTS(args: {
   apiKey: string;
   text: string;
+  voiceId: string;
 }): Promise<ArrayBuffer | null> {
   try {
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+    const res = await fetch('https://api.inworld.ai/tts/v1/voice', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${args.apiKey}`,
+        Authorization: `Basic ${args.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini-tts',
-        voice: 'onyx',
-        input: args.text.slice(0, 4096),
-        instructions: TTS_INSTRUCTION,
-        response_format: 'mp3',
+        text: args.text.slice(0, 4096),
+        voice_id: args.voiceId,
+        model_id: 'inworld-tts-1.5-max',
+        audio_config: {
+          audio_encoding: 'MP3',
+          sample_rate_hertz: 24000,
+        },
       }),
     });
     if (!res.ok) {
-      console.error('[TTS] OpenAI error:', await res.text());
+      console.error('[TTS] Inworld error:', await res.text());
       return null;
     }
-    return await res.arrayBuffer();
+    const json = await res.json() as { audioContent?: string };
+    if (!json.audioContent) {
+      console.error('[TTS] Inworld: no audioContent in response');
+      return null;
+    }
+    // Decode base64 to ArrayBuffer
+    const binaryStr = atob(json.audioContent);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return bytes.buffer;
   } catch (err) {
     console.error('[TTS] fetch error:', err);
     return null;
@@ -837,6 +880,7 @@ async function callOpenAITTS(args: {
 async function generateAndStoreAllAudio(args: {
   env: Env;
   guidanceId: string;
+  voiceId: string;
   passageReference: string;
   passageText: string;
   contextText: string | null;
@@ -844,7 +888,7 @@ async function generateAndStoreAllAudio(args: {
   prayerText: string | null;
   reflectionQuestion: string | null;
 }): Promise<void> {
-  if (!args.env.OPENAI_API_KEY || !args.env.AUDIO_BUCKET) return;
+  if (!args.env.INWORLD_API_KEY || !args.env.AUDIO_BUCKET) return;
   const sections = buildSectionTexts({
     passageReference: args.passageReference,
     passageText: args.passageText,
@@ -860,7 +904,11 @@ async function generateAndStoreAllAudio(args: {
     sectionKeys.map(async (section) => {
       const text = sections[section];
       if (!text) return;
-      const buffer = await callOpenAITTS({ apiKey: args.env.OPENAI_API_KEY!, text });
+      const buffer = await callInworldTTS({
+        apiKey: args.env.INWORLD_API_KEY!,
+        text,
+        voiceId: args.voiceId,
+      });
       if (!buffer) return;
       await args.env.AUDIO_BUCKET!.put(
         `guidance/${args.guidanceId}/${section}.mp3`,
@@ -1253,10 +1301,12 @@ export default {
         }
 
         // Generate and store all audio sections synchronously before responding
-        if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
+        if (savedGuidance?.id && env.INWORLD_API_KEY && env.AUDIO_BUCKET) {
+          const ttsVoice = (profile as any).tts_voice ?? 'Graham';
           await generateAndStoreAllAudio({
             env,
             guidanceId: savedGuidance.id,
+            voiceId: ttsVoice,
             passageReference: selectedPassage.reference,
             passageText: selectedPassageText,
             contextText: generated.context_text,
@@ -1638,7 +1688,7 @@ export default {
         }
 
         // Fallback: generate on-the-fly for the requested section
-        if (!env.OPENAI_API_KEY) {
+        if (!env.INWORLD_API_KEY) {
           return json({ error: 'TTS not configured' }, { status: 503, headers: cors });
         }
 
@@ -1652,6 +1702,14 @@ export default {
         if (!guidance) {
           return json({ error: 'Guidance not found' }, { status: 404, headers: cors });
         }
+
+        // Fetch user voice preference
+        const { data: userProfile } = await supabase
+          .from('spiritual_profiles')
+          .select('tts_voice')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        const fallbackVoiceId = (userProfile as any)?.tts_voice ?? 'Graham';
 
         let passageReference = '';
         let passageText = guidance.verse_text ?? '';
@@ -1684,7 +1742,7 @@ export default {
           return json({ error: 'No content for this section' }, { status: 404, headers: cors });
         }
 
-        const buffer = await callOpenAITTS({ apiKey: env.OPENAI_API_KEY, text: sectionText });
+        const buffer = await callInworldTTS({ apiKey: env.INWORLD_API_KEY, text: sectionText, voiceId: fallbackVoiceId });
         if (!buffer) {
           return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
         }
