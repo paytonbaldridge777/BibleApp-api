@@ -771,55 +771,104 @@ async function resolvePassageText(
 // TTS helpers
 // ---------------------------------------------------------------------------
 
-function buildTTSText(args: {
+type TTSSection = 'all' | 'verse' | 'context' | 'devotional' | 'prayer' | 'reflection';
+
+const TTS_INSTRUCTION =
+  'Speak slowly and warmly, with natural pauses between sentences, as a pastor delivering a morning devotional. Let each thought breathe. Do not rush.';
+
+function buildSectionTexts(args: {
   passageReference: string;
   passageText: string;
   contextText: string | null;
   devotionalText: string | null;
   prayerText: string | null;
   reflectionQuestion: string | null;
-}): string {
-  const parts: string[] = [];
-  parts.push(`Today's verse. ${args.passageReference}. ${args.passageText}`);
-  if (args.contextText) parts.push(`Biblical Context. ${args.contextText}`);
-  if (args.devotionalText) parts.push(`Devotional. ${args.devotionalText}`);
-  if (args.prayerText) parts.push(`Prayer. ${args.prayerText}`);
-  if (args.reflectionQuestion) parts.push(`Reflection. ${args.reflectionQuestion}`);
-  return parts.join('\n\n');
+}): Record<TTSSection, string> {
+  const verse = `Here is today\'s verse.\n\n${args.passageReference}.\n\n${args.passageText}`;
+  const context = args.contextText
+    ? `Some biblical context.\n\n${args.contextText}`
+    : '';
+  const devotional = args.devotionalText
+    ? `Today\'s devotional.\n\n${args.devotionalText}`
+    : '';
+  const prayer = args.prayerText
+    ? `Let us pray.\n\n${args.prayerText}`
+    : '';
+  const reflection = args.reflectionQuestion
+    ? `A moment for reflection.\n\n${args.reflectionQuestion}`
+    : '';
+
+  const allParts = [verse, context, devotional, prayer, reflection].filter(Boolean);
+  const all = allParts.join('\n\n');
+
+  return { all, verse, context, devotional, prayer, reflection };
 }
 
-async function generateAndStoreAudio(args: {
-  env: Env;
-  guidanceId: string;
+async function callOpenAITTS(args: {
+  apiKey: string;
   text: string;
-}): Promise<void> {
-  if (!args.env.OPENAI_API_KEY || !args.env.AUDIO_BUCKET) return;
+}): Promise<ArrayBuffer | null> {
   try {
-    const truncated = args.text.slice(0, 4096);
-    const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${args.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${args.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'tts-1-hd',
+        model: 'gpt-4o-mini-tts',
         voice: 'onyx',
-        input: truncated,
+        input: args.text.slice(0, 4096),
+        instructions: TTS_INSTRUCTION,
         response_format: 'mp3',
       }),
     });
-    if (!openaiRes.ok) {
-      console.error('[TTS] OpenAI error:', await openaiRes.text());
-      return;
+    if (!res.ok) {
+      console.error('[TTS] OpenAI error:', await res.text());
+      return null;
     }
-    const audioBuffer = await openaiRes.arrayBuffer();
-    await args.env.AUDIO_BUCKET.put(`guidance/${args.guidanceId}.mp3`, audioBuffer, {
-      httpMetadata: { contentType: 'audio/mpeg' },
-    });
+    return await res.arrayBuffer();
   } catch (err) {
-    console.error('[TTS] Failed to generate/store audio:', err);
+    console.error('[TTS] fetch error:', err);
+    return null;
   }
+}
+
+async function generateAndStoreAllAudio(args: {
+  env: Env;
+  guidanceId: string;
+  passageReference: string;
+  passageText: string;
+  contextText: string | null;
+  devotionalText: string | null;
+  prayerText: string | null;
+  reflectionQuestion: string | null;
+}): Promise<void> {
+  if (!args.env.OPENAI_API_KEY || !args.env.AUDIO_BUCKET) return;
+  const sections = buildSectionTexts({
+    passageReference: args.passageReference,
+    passageText: args.passageText,
+    contextText: args.contextText,
+    devotionalText: args.devotionalText,
+    prayerText: args.prayerText,
+    reflectionQuestion: args.reflectionQuestion,
+  });
+
+  const sectionKeys: TTSSection[] = ['all', 'verse', 'context', 'devotional', 'prayer', 'reflection'];
+
+  await Promise.all(
+    sectionKeys.map(async (section) => {
+      const text = sections[section];
+      if (!text) return;
+      const buffer = await callOpenAITTS({ apiKey: args.env.OPENAI_API_KEY!, text });
+      if (!buffer) return;
+      await args.env.AUDIO_BUCKET!.put(
+        `guidance/${args.guidanceId}/${section}.mp3`,
+        buffer,
+        { httpMetadata: { contentType: 'audio/mpeg' } }
+      );
+    })
+  );
 }
 
 export default {
@@ -1203,9 +1252,11 @@ export default {
           );
         }
 
-        // Fire-and-forget: generate and store audio in R2
+        // Generate and store all audio sections synchronously before responding
         if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
-          const ttsText = buildTTSText({
+          await generateAndStoreAllAudio({
+            env,
+            guidanceId: savedGuidance.id,
             passageReference: selectedPassage.reference,
             passageText: selectedPassageText,
             contextText: generated.context_text,
@@ -1213,8 +1264,6 @@ export default {
             prayerText: generated.prayer_text,
             reflectionQuestion: generated.reflection_question,
           });
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          generateAndStoreAudio({ env, guidanceId: savedGuidance.id, text: ttsText });
         }
 
         return json(
@@ -1557,8 +1606,9 @@ export default {
       }
     }
 
-    // GET /tts/:guidanceId -- serve stored audio from R2, generate on-the-fly as fallback
-    const ttsMatch = path.match(/^\/tts\/([a-zA-Z0-9_-]+)$/);
+    // GET /tts/:guidanceId/:section
+    const validSections = new Set(['all', 'verse', 'context', 'devotional', 'prayer', 'reflection']);
+    const ttsMatch = path.match(/^\/tts\/([a-zA-Z0-9_-]+)\/([a-z]+)$/);
     if (request.method === 'GET' && ttsMatch) {
       try {
         const {
@@ -1570,10 +1620,15 @@ export default {
         }
 
         const guidanceId = ttsMatch[1];
+        const section = ttsMatch[2];
+
+        if (!validSections.has(section)) {
+          return json({ error: 'Invalid section' }, { status: 400, headers: cors });
+        }
 
         // Try R2 first
         if (env.AUDIO_BUCKET) {
-          const stored = await env.AUDIO_BUCKET.get(`guidance/${guidanceId}.mp3`);
+          const stored = await env.AUDIO_BUCKET.get(`guidance/${guidanceId}/${section}.mp3`);
           if (stored) {
             const audioHeaders = new Headers(cors);
             audioHeaders.set('Content-Type', 'audio/mpeg');
@@ -1582,7 +1637,7 @@ export default {
           }
         }
 
-        // Fallback: generate on-the-fly from guidance record
+        // Fallback: generate on-the-fly for the requested section
         if (!env.OPENAI_API_KEY) {
           return json({ error: 'TTS not configured' }, { status: 503, headers: cors });
         }
@@ -1615,7 +1670,7 @@ export default {
           }
         }
 
-        const ttsText = buildTTSText({
+        const sectionTexts = buildSectionTexts({
           passageReference,
           passageText,
           contextText: guidance.context_text,
@@ -1624,31 +1679,20 @@ export default {
           reflectionQuestion: guidance.reflection_question,
         });
 
-        const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'tts-1-hd',
-            voice: 'onyx',
-            input: ttsText.slice(0, 4096),
-            response_format: 'mp3',
-          }),
-        });
-
-        if (!openaiRes.ok) {
-          console.error('[TTS] OpenAI fallback error:', await openaiRes.text());
-          return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
+        const sectionText = sectionTexts[section as TTSSection];
+        if (!sectionText) {
+          return json({ error: 'No content for this section' }, { status: 404, headers: cors });
         }
 
-        const audioBuffer = await openaiRes.arrayBuffer();
+        const buffer = await callOpenAITTS({ apiKey: env.OPENAI_API_KEY, text: sectionText });
+        if (!buffer) {
+          return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
+        }
 
         // Store in R2 for next time
         if (env.AUDIO_BUCKET) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          env.AUDIO_BUCKET.put(`guidance/${guidanceId}.mp3`, audioBuffer.slice(0), {
+          env.AUDIO_BUCKET.put(`guidance/${guidanceId}/${section}.mp3`, buffer.slice(0), {
             httpMetadata: { contentType: 'audio/mpeg' },
           });
         }
@@ -1656,7 +1700,7 @@ export default {
         const audioHeaders = new Headers(cors);
         audioHeaders.set('Content-Type', 'audio/mpeg');
         audioHeaders.set('Cache-Control', 'private, max-age=86400');
-        return new Response(audioBuffer, { status: 200, headers: audioHeaders });
+        return new Response(buffer, { status: 200, headers: audioHeaders });
       } catch (err) {
         return json(
           { error: err instanceof Error ? err.message : 'TTS failed' },
