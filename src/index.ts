@@ -93,6 +93,7 @@ type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
 };
@@ -1480,6 +1481,67 @@ export default {
           {
             error: err instanceof Error ? err.message : 'Failed to remove favorite',
           },
+          { status: 500, headers: cors }
+        );
+      }
+    }
+
+    if (request.method === 'POST' && path === '/tts') {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError || !user) {
+          return json({ error: 'Unauthorized' }, { status: 401, headers: cors });
+        }
+
+        if (!env.OPENAI_API_KEY) {
+          return json({ error: 'TTS not configured' }, { status: 503, headers: cors });
+        }
+
+        let body: { text?: string } = {};
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: 'Invalid JSON body' }, { status: 400, headers: cors });
+        }
+
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!text) {
+          return json({ error: 'text is required' }, { status: 400, headers: cors });
+        }
+
+        const truncated = text.slice(0, 4096);
+
+        const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'tts-1-hd',
+            voice: 'nova',
+            input: truncated,
+            response_format: 'mp3',
+          }),
+        });
+
+        if (!openaiRes.ok) {
+          const errText = await openaiRes.text();
+          console.error('[TTS] OpenAI error:', errText);
+          return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
+        }
+
+        const audioBuffer = await openaiRes.arrayBuffer();
+        const audioHeaders = new Headers(cors);
+        audioHeaders.set('Content-Type', 'audio/mpeg');
+        audioHeaders.set('Cache-Control', 'private, max-age=3600');
+        return new Response(audioBuffer, { status: 200, headers: audioHeaders });
+      } catch (err) {
+        return json(
+          { error: err instanceof Error ? err.message : 'TTS failed' },
           { status: 500, headers: cors }
         );
       }
