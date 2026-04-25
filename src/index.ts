@@ -1648,7 +1648,7 @@ export default {
           if (stored) {
             const audioHeaders = new Headers(cors);
             audioHeaders.set('Content-Type', 'audio/mpeg');
-            audioHeaders.set('Cache-Control', 'private, max-age=86400');
+            audioHeaders.set('Cache-Control', 'no-store');
             return new Response(stored.body, { status: 200, headers: audioHeaders });
           }
         }
@@ -1723,7 +1723,7 @@ export default {
 
         const audioHeaders = new Headers(cors);
         audioHeaders.set('Content-Type', 'audio/mpeg');
-        audioHeaders.set('Cache-Control', 'private, max-age=86400');
+        audioHeaders.set('Cache-Control', 'no-store');
         return new Response(buffer, { status: 200, headers: audioHeaders });
       } catch (err) {
         return json(
