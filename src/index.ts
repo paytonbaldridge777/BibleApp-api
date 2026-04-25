@@ -859,6 +859,13 @@ async function generateAndStoreAllAudio(args: {
 
   const sectionKeys: TTSSection[] = ['all', 'verse', 'context', 'devotional', 'prayer', 'reflection'];
 
+  // Delete existing files first so stale audio is never served during regeneration
+  await Promise.all(
+    sectionKeys.map((section) =>
+      args.env.AUDIO_BUCKET!.delete(`guidance/${args.guidanceId}/${section}.mp3`).catch(() => {})
+    )
+  );
+
   await Promise.all(
     sectionKeys.map(async (section) => {
       const text = sections[section];
@@ -1259,10 +1266,10 @@ export default {
           );
         }
 
-        // Fire-and-forget: generate audio in background so guidance returns immediately
+        // Generate and store all audio sections synchronously before responding
         if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
           const ttsVoice = (profile as any).tts_voice ?? 'ash';
-          void generateAndStoreAllAudio({
+          await generateAndStoreAllAudio({
             env,
             guidanceId: savedGuidance.id,
             voiceId: ttsVoice,
