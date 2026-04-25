@@ -1269,7 +1269,7 @@ export default {
         // Generate and store all audio sections synchronously before responding
         if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
           const ttsVoice = (profile as any).tts_voice ?? 'ash';
-          await generateAndStoreAllAudio({
+          void generateAndStoreAllAudio({
             env,
             guidanceId: savedGuidance.id,
             voiceId: ttsVoice,
