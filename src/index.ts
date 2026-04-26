@@ -781,8 +781,11 @@ function buildSectionTexts(args: {
   prayerText: string | null;
   reflectionQuestion: string | null;
 }): Record<TTSSection, string> {
+  const spokenRef = args.passageReference
+    .replace(/(\w+)\s+(\d+):(\d+)-(\d+)/, 'from the book of $1, chapter $2, verses $3 through $4')
+    .replace(/(\w+)\s+(\d+):(\d+)/, 'from the book of $1, chapter $2, verse $3');
   const verse =
-    `Here is today's verse.\n\n${args.passageReference}.\n\n${args.passageText}`;
+      `Here is today's verse, ${spokenRef}.\n\n${args.passageText}`;
 
   const context = args.contextText
     ? `Some biblical context.\n\n${args.contextText}`
