@@ -804,7 +804,7 @@ function buildSectionTexts(args: {
     : '';
 
   const allParts = [verse, context, devotional, prayer, reflection].filter(Boolean);
-  const all = allParts.join('\n\n');
+  const all = allParts.join('\n\n...\n\n');
 
   return { all, verse, context, devotional, prayer, reflection };
 }
