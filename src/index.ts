@@ -822,9 +822,10 @@ async function callOpenAITTS(args: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'tts-1-hd',
+        model: 'gpt-4o-mini-tts',
         voice: args.voiceId,
         input: args.text.slice(0, 4096),
+        instructions: 'Speak slowly and warmly, as a pastor delivering a morning devotional to a congregation. Use natural pauses between sentences and phrases. Let each thought land before moving on. Be reverent but approachable.',
         response_format: 'mp3',
       }),
     });
