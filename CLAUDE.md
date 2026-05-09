@@ -5,6 +5,4 @@
 - The em-dash rule inside the Claude prompt in `src/index.ts` must be preserved on every edit to that file
 - Don't assume. Surface tradeoffs before acting.
 - Minimum code that solves the problem. Nothing speculative.
-- Don’t assume. Don’t hide confusion. Surface tradeoffs.
-- Minimum code that solves the problem. Nothing speculative.
 
