@@ -1,21 +1,10 @@
-# Shepherd's Compass
+# Shepherd's Compass -- API (Cloudflare Worker)
 
-## Stack
-- Frontend: Next.js on Cloudflare Pages
-- API: Cloudflare Worker (`BibleApp-API` repo)
-- Auth/DB: Supabase
-- Payments: Stripe (incomplete)
-
-## Rules
 - Never use em-dashes in generated text
-- Always read the live file before editing
-- `redirect()` must never be inside a try/catch block
-- Commits go to `main` unless the change is risky
+- Always read the live file before editing -- never work from a cached copy
+- The em-dash rule inside the Claude prompt in `src/index.ts` must be preserved on every edit to that file
+- Don't assume. Surface tradeoffs before acting.
+- Minimum code that solves the problem. Nothing speculative.
 - Don’t assume. Don’t hide confusion. Surface tradeoffs.
 - Minimum code that solves the problem. Nothing speculative.
-- Touch only what you must. Clean up only your own mess.
-- Define success criteria. Loop until verified.
 
-## Key files
-- `src/index.ts` -- Cloudflare Worker entry (preserve em-dash rule in Claude prompt)
-- `middleware.ts` -- deleted intentionally, do not recreate
