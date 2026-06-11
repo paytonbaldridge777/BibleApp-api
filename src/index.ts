@@ -407,8 +407,8 @@ function buildFallbackGuidance(args: {
 
   const prayerText =
     tone === 'direct'
-      ? `God, thank You for Your Word. Help me live the truth of ${passage.reference} today. Strengthen me where I am weak, guide my thoughts, and teach me to trust You more. Amen.`
-      : `Lord, thank You for meeting me in this moment. Through ${passage.reference}, remind me that I am not alone. Calm my heart, guide my thoughts, and help me walk closely with You today. Amen.`;
+      ? `God, thank You for Your Word. Help me live the truth of ${passage.reference} today. Strengthen me where I am weak, guide my thoughts, and teach me to trust You more. In Jesus' name, Amen.`
+      : `Lord, thank You for meeting me in this moment. Through ${passage.reference}, remind me that I am not alone. Calm my heart, guide my thoughts, and help me walk closely with You today. In Jesus' name, Amen.`;
 
   const reflectionQuestion = `What would it look like to live out ${passage.reference} in one specific way today?`;
 
@@ -480,7 +480,7 @@ General rules:
 - Do not include markdown.
 - Keep context_text to about 110-170 words.
 ${devotionalLengthRule}
-- Keep prayer_text to 40-80 words.
+- Keep prayer_text to 40-80 words. Always end with "In Jesus' name, Amen."
 - Keep reflection_question to one sentence.
 - Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 
