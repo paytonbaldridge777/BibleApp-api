@@ -253,6 +253,11 @@ function mapProfileValueToThemeSlug(value: string): string | null {
     discernment: 'wisdom',
     decisions: 'wisdom',
     decision_making: 'wisdom',
+    strength: 'endurance',
+    healing: 'hope',
+    anxiety_relief: 'anxiety',
+    freedom_from_addiction: 'addiction_strongholds',
+    freedom: 'addiction_strongholds',
     purpose: 'purpose',
     calling: 'purpose',
     meaning: 'purpose',
@@ -1115,8 +1120,10 @@ export default {
         // If only free text provided, use Claude to identify the most relevant theme slug
         const profileSlugs = inferThemeSlugs(profile as SpiritualProfile);
         let themeSlugs = profileSlugs;
+        let prioritySlug: string | null = null;
 
         if (contextThemeSlug) {
+          prioritySlug = contextThemeSlug;
           themeSlugs = [contextThemeSlug, ...profileSlugs.filter((s) => s !== contextThemeSlug)];
         } else if (contextFreeText) {
           const { data: allThemes } = await supabase
@@ -1130,6 +1137,7 @@ export default {
             : null;
 
           if (conceptSlug) {
+            prioritySlug = conceptSlug;
             themeSlugs = [conceptSlug, ...profileSlugs.filter((s) => s !== conceptSlug)];
           }
         }
@@ -1148,10 +1156,36 @@ export default {
           .map((slug) => themesBySlug.get(slug))
           .filter((t): t is ThemeRow => Boolean(t));
 
+        // Fetch recent guidance to avoid repeating themes and passages
+        const { data: recentGuidance } = await supabase
+          .from('daily_guidance')
+          .select('theme_id, passage_id, guidance_date')
+          .eq('user_id', user.id)
+          .order('guidance_date', { ascending: false })
+          .limit(14);
+
+        // Themes used in the last 3 entries get moved to the back of the line
+        // (unless explicitly requested via chip or free text)
+        const recentThemeIds = new Set(
+          (recentGuidance ?? []).slice(0, 3).map((g: any) => g.theme_id).filter(Boolean)
+        );
+        // Passages used in the last 14 entries are excluded from the pick
+        const recentPassageIds = new Set(
+          (recentGuidance ?? []).map((g: any) => g.passage_id).filter(Boolean)
+        );
+
+        const freshThemes = orderedThemes.filter(
+          (t) => t.slug === prioritySlug || !recentThemeIds.has(t.id)
+        );
+        const staleThemes = orderedThemes.filter(
+          (t) => t.slug !== prioritySlug && recentThemeIds.has(t.id)
+        );
+        const finalThemes = [...freshThemes, ...staleThemes];
+
         let selectedTheme: ThemeRow | null = null;
         let selectedPassage: PassageRow | null = null;
 
-        for (const theme of orderedThemes) {
+        for (const theme of finalThemes) {
           const { data: mappings, error: mappingError } = await supabase
             .from('scripture_theme_map')
             .select(`
@@ -1183,7 +1217,11 @@ export default {
 
           if (weightedPassages.length === 0) continue;
 
-          const picked = weightedRandomPick(weightedPassages);
+          // Prefer passages not used recently; fall back to full pool if all were used
+          const freshPassages = weightedPassages.filter((p) => !recentPassageIds.has(p.id));
+          const passagePool = freshPassages.length > 0 ? freshPassages : weightedPassages;
+
+          const picked = weightedRandomPick(passagePool);
           if (!picked) continue;
 
           selectedTheme = theme;
