@@ -503,11 +503,17 @@ context_text rules:
 devotional_text rules:
 - devotional_text should be the personal, pastoral application section.
 - It may encourage, comfort, and apply the truth of the passage to the reader.
-- When the user has shared something specific on their heart, identify and name a concrete biblical concept, 
-  word, or principle from the passage that speaks directly to their situation. Name it explicitly early in 
-  the devotional (e.g. "The Hebrew word selah...", "The biblical concept of kairos...", "What Scripture 
-  calls 'stedfast love'..."). Then build the application from that named anchor rather than from the 
-  passage narrative alone.
+- Vary your entry point each time. Do not default to defining a single word or naming a biblical concept as the opening move. Instead, choose the approach that best fits the passage and reader:
+  - Open with the human situation the passage addresses (struggle, fear, longing, joy, doubt)
+  - Open with a specific image or scene from the passage and what it reveals
+  - Open with a tension or question the passage raises, then resolve it
+  - Open with a plain statement of what the passage is saying and why it matters today
+  - Only anchor on a named word or concept (e.g. "The Hebrew word selah...") when that word genuinely unlocks something the reader would otherwise miss, and even then do not make it the entire devotional
+- Vary your sentence rhythm, paragraph structure, and closing. Not every devotional should end with an invitation to pause or reflect inwardly.
+- Never use the phrase "Sit with that" or close variations of it.
+- Never use the phrase "In a world where" as an opener.
+- Avoid generic filler phrases like "This reminds us," "This speaks to us," "This encourages us," or "We are reminded."
+- When the user has shared something specific on their heart, connect the passage directly to their situation in concrete terms rather than abstractly.
 
 Tone and style rules (based on user's tone_preference: "${args.profile.tone_preference ?? 'gentle'}"):
 ${(() => {
