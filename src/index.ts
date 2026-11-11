@@ -313,8 +313,9 @@ async function resolveConceptSlug(
   try {
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5-5',
       max_tokens: 100,
+      thinking: { type: 'between_tools' },
       messages: [
         {
           role: 'user',
