@@ -1023,7 +1023,7 @@ async function callGeminiTTS(args: {
     }
     return concatBuffers(audio);
   } catch (err) {
-    console.error('[TTS] Gemini error:', err);
+    console.error('[TTS] Gemini error: ' + (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }
