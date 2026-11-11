@@ -838,7 +838,7 @@ const TTS_FEMALE_VOICE = 'Sulafat';
 const TTS_STYLE_PROMPT =
   'Read warmly and clearly in a British English accent, at a natural, conversational pace, like a pastor reading a morning devotional aloud. Be reverent but approachable.';
 // Google caps the text field at 4,000 bytes per request; stay under it.
-const TTS_MAX_CHUNK_BYTES = 1000;
+const TTS_MAX_CHUNK_BYTES = 3800;
 
 // Older profiles store OpenAI voice names. Map them to the matching Gemini voice.
 const LEGACY_FEMALE_VOICES = new Set(['alloy', 'coral', 'nova', 'sage', 'shimmer', 'marin']);
@@ -1015,8 +1015,7 @@ async function callGeminiTTS(args: {
     const token = await getGoogleAccessToken(sa);
     const voice = resolveTtsVoice(args.voiceId);
     const chunks = chunkTextForTts(args.text);
-    // Sequential so chunks stay in order and we don't burst the quota.
-        // Generate chunks in parallel; Promise.all keeps the results in order.
+    // Generate chunks in parallel; Promise.all keeps the results in order.
     const audio = await Promise.all(
       chunks.map((chunk) => synthesizeChunk(token, sa.project_id, chunk, voice))
     );
@@ -1027,52 +1026,16 @@ async function callGeminiTTS(args: {
   }
 }
 
-async function generateAndStoreAllAudio(args: {
-  env: Env;
-  guidanceId: string;
-  voiceId: string;
-  passageReference: string;
-  passageText: string;
-  contextText: string | null;
-  devotionalText: string | null;
-  prayerText: string | null;
-  reflectionQuestion: string | null;
-}): Promise<void> {
-  if (!args.env.GOOGLE_TTS_SERVICE_ACCOUNT || !args.env.AUDIO_BUCKET) return;
-  const sections = buildSectionTexts({
-    passageReference: args.passageReference,
-    passageText: args.passageText,
-    contextText: args.contextText,
-    devotionalText: args.devotionalText,
-    prayerText: args.prayerText,
-    reflectionQuestion: args.reflectionQuestion,
-  });
-
+// Audio is generated on demand when a section is first played (see GET /tts).
+// When a devotional is (re)generated, remove any saved audio so the old
+// devotional's audio is never served for the new text.
+async function deleteStoredAudio(env: Env, guidanceId: string): Promise<void> {
+  if (!env.AUDIO_BUCKET) return;
   const sectionKeys: TTSSection[] = ['all', 'verse', 'context', 'devotional', 'prayer', 'reflection'];
-
-  // Delete existing files first so stale audio is never served during regeneration
   await Promise.all(
     sectionKeys.map((section) =>
-      args.env.AUDIO_BUCKET!.delete(`guidance/${args.guidanceId}/${section}.mp3`).catch(() => {})
+      env.AUDIO_BUCKET!.delete(`guidance/${guidanceId}/${section}.mp3`).catch(() => {})
     )
-  );
-
-  await Promise.all(
-    sectionKeys.map(async (section) => {
-      const text = sections[section];
-      if (!text) return;
-      const buffer = await callGeminiTTS({
-        env: args.env,
-        text,
-        voiceId: args.voiceId,
-      });
-      if (!buffer) return;
-      await args.env.AUDIO_BUCKET!.put(
-        `guidance/${args.guidanceId}/${section}.mp3`,
-        buffer,
-        { httpMetadata: { contentType: 'audio/mpeg' } }
-      );
-    })
   );
 }
 
@@ -1490,21 +1453,10 @@ export default {
           );
         }
 
-        // Generate and store all audio sections in the background after responding.
-        // waitUntil keeps the Worker alive until the audio is saved.
-        if (savedGuidance?.id && env.GOOGLE_TTS_SERVICE_ACCOUNT && env.AUDIO_BUCKET) {
-          const ttsVoice = resolveTtsVoice((profile as any).tts_voice);
-          ctx.waitUntil(generateAndStoreAllAudio({
-            env,
-            guidanceId: savedGuidance.id,
-            voiceId: ttsVoice,
-            passageReference: selectedPassage.reference,
-            passageText: selectedPassageText,
-            contextText: generated.context_text,
-            devotionalText: generated.devotional_text,
-            prayerText: generated.prayer_text,
-            reflectionQuestion: generated.reflection_question,
-          }));
+        // Clear any saved audio from a previous version of today's devotional.
+        // New audio is generated when the user presses play.
+        if (savedGuidance?.id) {
+          await deleteStoredAudio(env, savedGuidance.id);
         }
 
         return json(
