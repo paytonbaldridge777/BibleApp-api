@@ -313,9 +313,10 @@ async function resolveConceptSlug(
   try {
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5-5',
-      max_tokens: 100,
-      thinking: { type: 'between_tools' },
+      model: 'claude-haiku-5-5',
+      max_tokens: 1000,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'low' },
       messages: [
         {
           role: 'user',
@@ -332,13 +333,18 @@ Respond with only the slug, nothing else. If none are a meaningful fit, respond 
       ],
     });
 
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+    const raw = getResponseText(response);
     if (!raw || raw === 'null') return null;
     const slug = raw.toLowerCase().replace(/[^a-z0-9_]/g, '');
     return availableSlugs.includes(slug) ? slug : null;
   } catch {
     return null;
   }
+}
+
+function getResponseText(response: Anthropic.Message): string | null {
+  const block = response.content.find((b) => b.type === 'text');
+  return block && block.type === 'text' ? block.text.trim() : null;
 }
 
 function stripCodeFences(value: string): string {
@@ -564,13 +570,13 @@ Passage:
 ${JSON.stringify(args.passage, null, 2)}`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1200,
+    model: 'claude-sonnet-5-5',
+    max_tokens: 1600,
+    thinking: { type: 'between_tools' },
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text =
-    response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+  const text = getResponseText(response);
   if (!text) {
     console.log('[Claude] No text content received');
     return null;
@@ -628,14 +634,14 @@ application rules:
 - Do not use phrases like "you should" or "you need to." Prefer "this passage invites," "readers are reminded," or similar.
 - Do not repeat the context_text. Application should go beyond historical background into meaning and significance.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 600,
+    const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5-5',
+    max_tokens: 800,
+    thinking: { type: 'between_tools' },
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text =
-    response.content[0]?.type === 'text' ? response.content[0].text.trim() : null;
+  const text = getResponseText(response);
   if (!text) return null;
 
   try {
