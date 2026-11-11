@@ -93,7 +93,7 @@ type Env = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
+  GOOGLE_TTS_SERVICE_ACCOUNT?: string; // full service account JSON key, stored as a secret
   CORS_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
   AUDIO_BUCKET?: R2Bucket;
@@ -342,6 +342,8 @@ Respond with only the slug, nothing else. If none are a meaningful fit, respond 
   }
 }
 
+// On the 5.5 models a response can begin with thinking blocks,
+// so find the text block instead of assuming it is first.
 function getResponseText(response: Anthropic.Message): string | null {
   const block = response.content.find((b) => b.type === 'text');
   return block && block.type === 'text' ? block.text.trim() : null;
@@ -436,7 +438,7 @@ function buildFallbackInterpretation(reference: string): InterpretationResult {
       `Consider reading several verses before and after this passage to understand how it fits within the author's argument or narrative. ` +
       `If the language feels unfamiliar, it may reflect ancient cultural assumptions, poetic conventions, or covenantal imagery that modern readers can miss without some background. ` +
       `Consulting a study Bible or commentary can add helpful depth to your reading of this passage.`,
-    application: `This passage speaks to the universal human experience of seeking meaning, direction, and connection with God in the midst of real life. Scripture consistently meets people in the full range of human circumstance — doubt, grief, gratitude, hope, and everything in between — and passages like this one remind readers that faith is lived in concrete moments, not in the abstract. Whatever this text calls for — trust, perseverance, honest lament, or quiet worship — it extends an invitation to bring your whole self to God. Reading slowly, and returning to a passage more than once, often reveals layers that a first reading misses.`,
+    application: `This passage speaks to the universal human experience of seeking meaning, direction, and connection with God in the midst of real life. Scripture consistently meets people in the full range of human circumstance, including doubt, grief, gratitude, hope, and everything in between, and passages like this one remind readers that faith is lived in concrete moments, not in the abstract. Whatever this text calls for, whether trust, perseverance, honest lament, or quiet worship, it extends an invitation to bring your whole self to God. Reading slowly, and returning to a passage more than once, often reveals layers that a first reading misses.`,
     
   };
 }
@@ -614,7 +616,6 @@ Rules:
 - Do not include markdown.
 - Do not use em dashes (—) anywhere in your response. Use commas, semicolons, or rewrite the sentence instead.
 - Keep context_text to 150-220 words.
-- Keep reflection_question to one sentence.
 
 context_text rules:
 - Be informational and scholarly, not devotional. Do not encourage, comfort, or exhort the reader.
@@ -634,7 +635,7 @@ application rules:
 - Do not use phrases like "you should" or "you need to." Prefer "this passage invites," "readers are reminded," or similar.
 - Do not repeat the context_text. Application should go beyond historical background into meaning and significance.`;
 
-    const response = await anthropic.messages.create({
+  const response = await anthropic.messages.create({
     model: 'claude-sonnet-5-5',
     max_tokens: 800,
     thinking: { type: 'between_tools' },
@@ -827,33 +828,202 @@ function buildSectionTexts(args: {
   return { all, verse, context, devotional, prayer, reflection };
 }
 
-async function callOpenAITTS(args: {
-  apiKey: string;
+// ---------------------------------------------------------------------------
+// Gemini TTS (Google Cloud Text-to-Speech)
+// ---------------------------------------------------------------------------
+
+const GEMINI_TTS_MODEL = 'gemini-2.5-flash-tts';
+const TTS_MALE_VOICE = 'Enceladus';
+const TTS_FEMALE_VOICE = 'Sulafat';
+const TTS_STYLE_PROMPT =
+  'Speak slowly and warmly, as a pastor delivering a morning devotional to a congregation. Use natural pauses between sentences and phrases. Let each thought land before moving on. Be reverent but approachable.';
+
+// Google caps the text field at 4,000 bytes per request; stay under it.
+const TTS_MAX_CHUNK_BYTES = 3800;
+
+// Older profiles store OpenAI voice names. Map them to the matching Gemini voice.
+const LEGACY_FEMALE_VOICES = new Set(['alloy', 'coral', 'nova', 'sage', 'shimmer', 'marin']);
+
+function resolveTtsVoice(stored: string | null | undefined): string {
+  const value = (stored ?? '').trim();
+  if (value.toLowerCase() === TTS_FEMALE_VOICE.toLowerCase()) return TTS_FEMALE_VOICE;
+  if (value.toLowerCase() === TTS_MALE_VOICE.toLowerCase()) return TTS_MALE_VOICE;
+  if (LEGACY_FEMALE_VOICES.has(value.toLowerCase())) return TTS_FEMALE_VOICE;
+  return TTS_MALE_VOICE;
+}
+
+type ServiceAccount = { client_email: string; private_key: string; project_id: string };
+
+let cachedGoogleToken: { token: string; expiresAt: number } | null = null;
+
+function base64UrlEncode(input: ArrayBuffer | string): string {
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function parseServiceAccount(env: Env): ServiceAccount | null {
+  if (!env.GOOGLE_TTS_SERVICE_ACCOUNT) return null;
+  try {
+    const sa = JSON.parse(env.GOOGLE_TTS_SERVICE_ACCOUNT) as ServiceAccount;
+    return sa.client_email && sa.private_key && sa.project_id ? sa : null;
+  } catch {
+    console.error('[TTS] GOOGLE_TTS_SERVICE_ACCOUNT is not valid JSON');
+    return null;
+  }
+}
+
+// Exchanges the service account key for a short-lived OAuth token, cached until near expiry.
+async function getGoogleAccessToken(sa: ServiceAccount): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedGoogleToken && cachedGoogleToken.expiresAt - 60 > now) {
+    return cachedGoogleToken.token;
+  }
+
+  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claims = base64UrlEncode(
+    JSON.stringify({
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/cloud-platform',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    })
+  );
+  const unsigned = `${header}.${claims}`;
+
+  const pem = sa.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s+/g, '');
+  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    new TextEncoder().encode(unsigned)
+  );
+  const jwt = `${unsigned}.${base64UrlEncode(signature)}`;
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Google token exchange failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { access_token: string; expires_in: number };
+  cachedGoogleToken = { token: data.access_token, expiresAt: now + data.expires_in };
+  return data.access_token;
+}
+
+// Splits text into chunks under the byte limit, breaking at paragraphs, then sentences.
+function chunkTextForTts(text: string, maxBytes = TTS_MAX_CHUNK_BYTES): string[] {
+  const byteLen = (s: string) => new TextEncoder().encode(s).length;
+  if (byteLen(text) <= maxBytes) return [text];
+
+  // Last resort for a single over-long sentence: split on word boundaries.
+  const splitWords = (s: string): string[] => {
+    const out: string[] = [];
+    let buf = '';
+    for (const word of s.split(/\s+/).filter(Boolean)) {
+      const next = buf ? `${buf} ${word}` : word;
+      if (byteLen(next) > maxBytes && buf) {
+        out.push(buf);
+        buf = word;
+      } else {
+        buf = next;
+      }
+    }
+    if (buf) out.push(buf);
+    return out;
+  };
+
+  const pieces = text
+    .split(/\n{2,}/)
+    .flatMap((para) =>
+      byteLen(para) <= maxBytes ? [para] : para.match(/[^.!?]+[.!?]+["')\]]*\s*|.+$/g) ?? [para]
+    )
+    .flatMap((piece) => (byteLen(piece) <= maxBytes ? [piece] : splitWords(piece)));
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const piece of pieces) {
+    const candidate = current ? `${current}\n\n${piece}` : piece;
+    if (byteLen(candidate) <= maxBytes) {
+      current = candidate;
+    } else {
+      if (current) chunks.push(current);
+      current = piece;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function concatBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
+  const total = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const b of buffers) {
+    out.set(new Uint8Array(b), offset);
+    offset += b.byteLength;
+  }
+  return out.buffer;
+}
+
+async function synthesizeChunk(token: string, projectId: string, text: string, voice: string): Promise<ArrayBuffer> {
+  const res = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'x-goog-user-project': projectId,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      input: { prompt: TTS_STYLE_PROMPT, text },
+      voice: { languageCode: 'en-US', name: voice, modelName: GEMINI_TTS_MODEL },
+      audioConfig: { audioEncoding: 'MP3' },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Gemini TTS error ${res.status}: ${await res.text()}`);
+  }
+  const data = (await res.json()) as { audioContent?: string };
+  if (!data.audioContent) throw new Error('Gemini TTS returned no audioContent');
+  return Uint8Array.from(atob(data.audioContent), (c) => c.charCodeAt(0)).buffer;
+}
+
+async function callGeminiTTS(args: {
+  env: Env;
   text: string;
   voiceId: string;
 }): Promise<ArrayBuffer | null> {
+  const sa = parseServiceAccount(args.env);
+  if (!sa) return null;
   try {
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${args.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini-tts',
-        voice: args.voiceId,
-        input: args.text.slice(0, 4096),
-        instructions: 'Speak slowly and warmly, as a pastor delivering a morning devotional to a congregation. Use natural pauses between sentences and phrases. Let each thought land before moving on. Be reverent but approachable.',
-        response_format: 'mp3',
-      }),
-    });
-    if (!res.ok) {
-      console.error('[TTS] OpenAI error:', await res.text());
-      return null;
+    const token = await getGoogleAccessToken(sa);
+    const voice = resolveTtsVoice(args.voiceId);
+    const chunks = chunkTextForTts(args.text);
+    // Sequential so chunks stay in order and we don't burst the quota.
+    const audio: ArrayBuffer[] = [];
+    for (const chunk of chunks) {
+      audio.push(await synthesizeChunk(token, sa.project_id, chunk, voice));
     }
-    return await res.arrayBuffer();
+    return concatBuffers(audio);
   } catch (err) {
-    console.error('[TTS] fetch error:', err);
+    console.error('[TTS] Gemini error:', err);
     return null;
   }
 }
@@ -869,7 +1039,7 @@ async function generateAndStoreAllAudio(args: {
   prayerText: string | null;
   reflectionQuestion: string | null;
 }): Promise<void> {
-  if (!args.env.OPENAI_API_KEY || !args.env.AUDIO_BUCKET) return;
+  if (!args.env.GOOGLE_TTS_SERVICE_ACCOUNT || !args.env.AUDIO_BUCKET) return;
   const sections = buildSectionTexts({
     passageReference: args.passageReference,
     passageText: args.passageText,
@@ -892,8 +1062,8 @@ async function generateAndStoreAllAudio(args: {
     sectionKeys.map(async (section) => {
       const text = sections[section];
       if (!text) return;
-      const buffer = await callOpenAITTS({
-        apiKey: args.env.OPENAI_API_KEY!,
+      const buffer = await callGeminiTTS({
+        env: args.env,
         text,
         voiceId: args.voiceId,
       });
@@ -908,7 +1078,7 @@ async function generateAndStoreAllAudio(args: {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/{2,}/g, '/');
     const origin = request.headers.get('Origin');
@@ -1321,10 +1491,11 @@ export default {
           );
         }
 
-        // Generate and store all audio sections synchronously before responding
-        if (savedGuidance?.id && env.OPENAI_API_KEY && env.AUDIO_BUCKET) {
-          const ttsVoice = (profile as any).tts_voice ?? 'ash';
-          void generateAndStoreAllAudio({
+        // Generate and store all audio sections in the background after responding.
+        // waitUntil keeps the Worker alive until the audio is saved.
+        if (savedGuidance?.id && env.GOOGLE_TTS_SERVICE_ACCOUNT && env.AUDIO_BUCKET) {
+          const ttsVoice = resolveTtsVoice((profile as any).tts_voice);
+          ctx.waitUntil(generateAndStoreAllAudio({
             env,
             guidanceId: savedGuidance.id,
             voiceId: ttsVoice,
@@ -1334,7 +1505,7 @@ export default {
             devotionalText: generated.devotional_text,
             prayerText: generated.prayer_text,
             reflectionQuestion: generated.reflection_question,
-          });
+          }));
         }
 
         return json(
@@ -1709,7 +1880,7 @@ export default {
         }
 
         // Fallback: generate on-the-fly for the requested section
-        if (!env.OPENAI_API_KEY) {
+        if (!env.GOOGLE_TTS_SERVICE_ACCOUNT) {
           return json({ error: 'TTS not configured' }, { status: 503, headers: cors });
         }
 
@@ -1730,7 +1901,7 @@ export default {
           .select('tts_voice')
           .eq('user_id', user.id)
           .maybeSingle();
-        const fallbackVoiceId = (userProfile as any)?.tts_voice ?? 'ash';
+        const fallbackVoiceId = resolveTtsVoice((userProfile as any)?.tts_voice);
 
         let passageReference = '';
         let passageText = guidance.verse_text ?? '';
@@ -1763,17 +1934,18 @@ export default {
           return json({ error: 'No content for this section' }, { status: 404, headers: cors });
         }
 
-        const buffer = await callOpenAITTS({ apiKey: env.OPENAI_API_KEY!, text: sectionText, voiceId: fallbackVoiceId });
+        const buffer = await callGeminiTTS({ env, text: sectionText, voiceId: fallbackVoiceId });
         if (!buffer) {
           return json({ error: 'TTS generation failed' }, { status: 502, headers: cors });
         }
 
         // Store in R2 for next time
         if (env.AUDIO_BUCKET) {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          env.AUDIO_BUCKET.put(`guidance/${guidanceId}/${section}.mp3`, buffer.slice(0), {
-            httpMetadata: { contentType: 'audio/mpeg' },
-          });
+          ctx.waitUntil(
+            env.AUDIO_BUCKET.put(`guidance/${guidanceId}/${section}.mp3`, buffer.slice(0), {
+              httpMetadata: { contentType: 'audio/mpeg' },
+            })
+          );
         }
 
         const audioHeaders = new Headers(cors);
