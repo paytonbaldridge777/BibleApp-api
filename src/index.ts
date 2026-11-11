@@ -838,7 +838,7 @@ const TTS_FEMALE_VOICE = 'Sulafat';
 const TTS_STYLE_PROMPT =
   'Read warmly and clearly in a British English accent, at a natural, conversational pace, like a pastor reading a morning devotional aloud. Be reverent but approachable.';
 // Google caps the text field at 4,000 bytes per request; stay under it.
-const TTS_MAX_CHUNK_BYTES = 3800;
+const TTS_MAX_CHUNK_BYTES = 1000;
 
 // Older profiles store OpenAI voice names. Map them to the matching Gemini voice.
 const LEGACY_FEMALE_VOICES = new Set(['alloy', 'coral', 'nova', 'sage', 'shimmer', 'marin']);
