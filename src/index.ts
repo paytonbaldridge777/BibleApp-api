@@ -836,8 +836,7 @@ const GEMINI_TTS_MODEL = 'gemini-2.5-flash-tts';
 const TTS_MALE_VOICE = 'Enceladus';
 const TTS_FEMALE_VOICE = 'Sulafat';
 const TTS_STYLE_PROMPT =
-  'Speak slowly and warmly, as a pastor delivering a morning devotional to a congregation. Use natural pauses between sentences and phrases. Let each thought land before moving on. Be reverent but approachable.';
-
+  'Read warmly and clearly in a British English accent, at a natural, conversational pace, like a pastor reading a morning devotional aloud. Be reverent but approachable.';
 // Google caps the text field at 4,000 bytes per request; stay under it.
 const TTS_MAX_CHUNK_BYTES = 3800;
 
@@ -993,7 +992,7 @@ async function synthesizeChunk(token: string, projectId: string, text: string, v
     },
     body: JSON.stringify({
       input: { prompt: TTS_STYLE_PROMPT, text },
-      voice: { languageCode: 'en-US', name: voice, modelName: GEMINI_TTS_MODEL },
+      voice: { languageCode: 'en-GB', name: voice, modelName: GEMINI_TTS_MODEL },
       audioConfig: { audioEncoding: 'MP3' },
     }),
   });
@@ -1017,10 +1016,10 @@ async function callGeminiTTS(args: {
     const voice = resolveTtsVoice(args.voiceId);
     const chunks = chunkTextForTts(args.text);
     // Sequential so chunks stay in order and we don't burst the quota.
-    const audio: ArrayBuffer[] = [];
-    for (const chunk of chunks) {
-      audio.push(await synthesizeChunk(token, sa.project_id, chunk, voice));
-    }
+        // Generate chunks in parallel; Promise.all keeps the results in order.
+    const audio = await Promise.all(
+      chunks.map((chunk) => synthesizeChunk(token, sa.project_id, chunk, voice))
+    );
     return concatBuffers(audio);
   } catch (err) {
     console.error('[TTS] Gemini error: ' + (err instanceof Error ? err.message : String(err)));
